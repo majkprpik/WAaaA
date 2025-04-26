@@ -16,10 +16,18 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Copy, SendHorizontal, User } from "lucide-react";
 
-const SUPABASE_URL = "http://127.0.0.1:54321";
+// const SUPABASE_URL = "http://127.0.0.1:54321"
+// const SUPABASE_ANON_KEY =
+//   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
+
+
+const SUPABASE_URL = "https://rwaycudvdrfzgdlysala.supabase.co"
 const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0";
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ3YXljdWR2ZHJmemdkbHlzYWxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU2NTM4MjQsImV4cCI6MjA2MTIyOTgyNH0.jTRS83424TsPG6uVVyUbP9yu1H67NVBp9aUT9CZGDWA"
+  
+  
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Temporary placeholder components - these will be implemented fully later
 const BaseCustomOverlay: React.FC<any> = ({ 
