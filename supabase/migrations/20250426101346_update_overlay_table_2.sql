@@ -1,0 +1,1 @@
+ALTER TABLE overlays ADD COLUMN url TEXT;
