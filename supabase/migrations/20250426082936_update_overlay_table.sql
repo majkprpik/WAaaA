@@ -1,0 +1,1 @@
+ALTER TABLE overlays ADD COLUMN layout JSONB DEFAULT '{}'::JSONB;
