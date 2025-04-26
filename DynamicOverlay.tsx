@@ -16,13 +16,28 @@ interface LayoutProps {
 const DynamicOverlay: React.FC<LayoutProps> = ({ style, content, id, url }) => {
   const [isEditing, setIsEditing] = useState(false)
   const [editedContent, setEditedContent] = useState(content)
-  const [editedUrl, setEditedUrl] = useState(url || "")
   const [isDragging, setIsDragging] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [position, setPosition] = useState({
     top: typeof style.top === 'number' ? style.top : 0,
     left: typeof style.left === 'number' ? style.left : 0
   })
+
+  // Calculate appropriate dimensions based on content length
+  const calculateDimensions = () => {
+    // Determine if content is short enough for compact size
+    const isShortContent = content.length < 100;
+    
+    // Define width based on content (could be more sophisticated with text measurement)
+    const width = isShortContent ? Math.max(200, content.length * 4) : 300;
+    
+    // Define minimum height
+    const minHeight = isShortContent ? 60 : 100;
+    
+    return { width, minHeight, isShortContent };
+  };
+  
+  const { width, minHeight, isShortContent } = calculateDimensions();
 
   // Ensure position is fixed for overlays
   const overlayStyle: React.CSSProperties = {
@@ -34,7 +49,11 @@ const DynamicOverlay: React.FC<LayoutProps> = ({ style, content, id, url }) => {
     cursor: isDragging ? "move" : "default",
     transition: isDragging ? "none" : "box-shadow 0.2s ease",
     boxShadow: isHovered ? "0 6px 12px rgba(0,0,0,0.2)" : style.boxShadow || "0 4px 8px rgba(0,0,0,0.15)",
-    pointerEvents: "auto" // Enable pointer events on the overlays
+    pointerEvents: "auto", // Enable pointer events on the overlays
+    width: style.width || width,
+    minHeight: style.minHeight || minHeight,
+    padding: isShortContent ? "12px 16px" : "16px",
+    fontSize: isShortContent ? "14px" : "16px"
   }
 
   const handleEditClick = (e: React.MouseEvent) => {
@@ -45,19 +64,44 @@ const DynamicOverlay: React.FC<LayoutProps> = ({ style, content, id, url }) => {
   const handleSave = async () => {
     if (id) {
       try {
+        console.log("Saving note content and position");
+        
+        // First, get the current overlay data to ensure we don't lose any properties
+        const { data: currentData, error: fetchError } = await supabase
+          .from("overlays")
+          .select("layout")
+          .eq("id", id)
+          .single();
+        
+        if (fetchError) {
+          throw fetchError;
+        }
+        
+        // Calculate dimensions for content - use editedContent for calculation since we're saving that
+        const isShortContent = editedContent.length < 100;
+        const contentWidth = isShortContent ? Math.max(200, editedContent.length * 4) : 300;
+        const contentMinHeight = isShortContent ? 60 : 100;
+        
+        // Update with merged data to preserve all layout properties
+        const updatedLayout = {
+          ...(currentData?.layout || {}),
+          style: {
+            ...(currentData?.layout?.style || {}),
+            ...style,
+            top: position.top,
+            left: position.left,
+            width: style.width || contentWidth,
+            minHeight: style.minHeight || contentMinHeight
+          },
+          content: editedContent,
+          url: currentData?.layout?.url || "" // Keep the original URL
+        };
+        
         // Update the overlay in the database using Supabase client
         const { data, error } = await supabase
           .from("overlays")
           .update({
-            layout: {
-              style: {
-                ...style,
-                top: position.top,
-                left: position.left
-              },
-              content: editedContent,
-              url: editedUrl
-            }
+            layout: updatedLayout
           })
           .eq("id", id)
           .select()
@@ -67,13 +111,13 @@ const DynamicOverlay: React.FC<LayoutProps> = ({ style, content, id, url }) => {
           throw error;
         }
         
-        console.log("Note updated:", data)
+        console.log("Note updated:", data);
       } catch (error) {
-        console.error("Error updating note:", error)
+        console.error("Error updating note:", error);
       }
     }
     
-    setIsEditing(false)
+    setIsEditing(false);
   }
 
   // Enable dragging
@@ -97,55 +141,93 @@ const DynamicOverlay: React.FC<LayoutProps> = ({ style, content, id, url }) => {
     
     // Handle mouse move
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX
-      const deltaY = moveEvent.clientY - startY
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
       
-      setPosition({
+      // Update the position state
+      const newPosition = {
         left: startLeft + deltaX,
         top: startTop + deltaY
-      })
+      };
+      
+      setPosition(newPosition);
     }
     
     // Handle mouse up
-    const handleMouseUp = () => {
+    const handleMouseUp = (mouseUpEvent: MouseEvent) => {
       setIsDragging(false)
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
       
       // If dragged a significant amount, don't trigger click
-      const deltaX = Math.abs(position.left - startLeft)
-      const deltaY = Math.abs(position.top - startTop)
+      const deltaX = mouseUpEvent.clientX - startX
+      const deltaY = mouseUpEvent.clientY - startY
       
-      if (deltaX > 5 || deltaY > 5) {
-        savePosition() // Save position change only
+      if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+        // Calculate final position explicitly to avoid async state issues
+        const finalPosition = {
+          top: startTop + deltaY,
+          left: startLeft + deltaX
+        };
+        
+        // Save the final position directly without relying on state
+        savePosition(finalPosition);
       }
     }
     
     // Save only the position (used after dragging)
-    const savePosition = async () => {
+    const savePosition = async (posToSave = position) => {
       if (id) {
         try {
+          console.log("Saving position:", posToSave);
+          
+          // First, get the current overlay data to ensure we don't lose any properties
+          const { data: currentData, error: fetchError } = await supabase
+            .from("overlays")
+            .select("layout")
+            .eq("id", id)
+            .single();
+          
+          if (fetchError) {
+            throw fetchError;
+          }
+          
+          // Calculate dimensions for content
+          const { width: contentWidth, minHeight: contentMinHeight } = calculateDimensions();
+          
+          // Update with merged data to preserve all layout properties
+          const updatedLayout = {
+            ...(currentData?.layout || {}),
+            style: {
+              ...(currentData?.layout?.style || {}),
+              ...style,
+              top: posToSave.top,
+              left: posToSave.left,
+              width: style.width || contentWidth,
+              minHeight: style.minHeight || contentMinHeight
+            },
+            content: content,
+            url: currentData?.layout?.url || "" // Keep the original URL
+          };
+          
           // Update just the position in the database using Supabase client
           const { data, error } = await supabase
             .from("overlays")
             .update({
-              layout: {
-                style: {
-                  ...style,
-                  top: position.top,
-                  left: position.left
-                },
-                content: content,
-                url: url || ""
-              }
+              layout: updatedLayout
             })
             .eq("id", id);
             
           if (error) {
             throw error;
           }
+          
+          // Update local state to match what was saved
+          setPosition(posToSave);
+          
+          console.log("Position updated successfully");
         } catch (error) {
-          console.error("Error updating position:", error)
+          console.error("Error updating position:", error);
         }
       }
     }
@@ -192,27 +274,27 @@ const DynamicOverlay: React.FC<LayoutProps> = ({ style, content, id, url }) => {
           onChange={(e) => setEditedContent(e.target.value)}
           autoFocus
         />
-        <div style={{
-          padding: "8px 16px",
-          borderTop: "1px solid #eee"
-        }}>
-          <label style={{ display: "block", marginBottom: "4px", fontSize: "12px", color: "#555" }}>
-            Show on URL (leave empty for all pages):
-          </label>
-          <input
-            type="text"
-            value={editedUrl}
-            onChange={(e) => setEditedUrl(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "6px",
-              border: "1px solid #ddd",
+        {url && (
+          <div style={{
+            padding: "8px 16px",
+            borderTop: "1px solid #eee",
+            fontSize: "12px",
+            color: "#666"
+          }}>
+            <div style={{ marginBottom: "6px" }}>This note appears on:</div>
+            <div style={{ 
+              overflow: "hidden", 
+              textOverflow: "ellipsis", 
+              whiteSpace: "nowrap",
+              padding: "6px 8px",
+              backgroundColor: "#f5f5f5",
               borderRadius: "4px",
-              fontSize: "12px"
-            }}
-            placeholder="https://example.com/page"
-          />
-        </div>
+              border: "1px solid #eee"
+            }}>
+              {url}
+            </div>
+          </div>
+        )}
         <div style={{
           display: "flex",
           justifyContent: "space-between",

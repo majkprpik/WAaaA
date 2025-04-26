@@ -53,12 +53,23 @@ const FloatingButton: React.FC = () => {
     pointerEvents: "auto"
   }
 
+  // Calculate editor size based on content
+  const getEditorSize = () => {
+    const isShortContent = noteContent.length < 100;
+    return {
+      width: isShortContent ? Math.max(250, noteContent.length * 4) : 300,
+      minHeight: 200, // Editor always needs more space for editing
+    };
+  };
+  
+  const { width: editorWidth } = getEditorSize();
+
   // Style for the floating note editor
   const noteEditorStyle: React.CSSProperties = {
     position: "fixed",
     top: notePosition.top,
     left: notePosition.left,
-    width: "300px",
+    width: `${editorWidth}px`,
     minHeight: "200px",
     backgroundColor: "white",
     borderRadius: "8px",
@@ -98,18 +109,25 @@ const FloatingButton: React.FC = () => {
   const handleSaveNote = async () => {
     if (noteContent.trim()) {
       try {
+        // Calculate appropriate size based on content length
+        const isShortContent = noteContent.length < 100;
+        const width = isShortContent ? Math.max(200, noteContent.length * 4) : 300;
+        const minHeight = isShortContent ? 60 : 100;
+        const padding = isShortContent ? "12px 16px" : "16px";
+        
         // Define the overlay configuration
         const overlayConfig = {
           style: {
             top: notePosition.top,
             left: notePosition.left,
-            width: 300,
-            minHeight: 100,
+            width: width,
+            minHeight: minHeight,
             backgroundColor: "white",
             borderRadius: "8px",
             boxShadow: "0 4px 8px rgba(0,0,0,0.15)",
-            padding: "16px",
-            border: "1px solid #ddd"
+            padding: padding,
+            border: "1px solid #ddd",
+            fontSize: isShortContent ? "14px" : "16px"
           },
           content: noteContent,
           url: noteUrl
