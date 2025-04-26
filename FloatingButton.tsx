@@ -1,281 +1,307 @@
-import React, { useState, useEffect } from "react"
-import { createOverlay, fetchOverlays } from "./utils/createOverlay"
+import React from "react"
+import { createClient } from "@supabase/supabase-js"
 import { calculateNextPosition } from "./utils/overlayPositioning"
+import { fetchOverlays, createOverlay } from "./utils/createOverlay"
+import type { NoteLayout, ButtonLayout, TimerLayout, SearchLayout, ChatAiLayout } from "./utils/createOverlay"
+import { getOpenAIApiKey } from "./components/ApiKeyConfig"
 
-const FloatingButton: React.FC = () => {
-  const [isCreatingNote, setIsCreatingNote] = useState(false)
-  const [noteContent, setNoteContent] = useState("")
-  const [noteUrl, setNoteUrl] = useState("")
-  const [notePosition, setNotePosition] = useState({ top: 20, left: 20 })
-  
-  // Set default URL to current page when opening editor
-  useEffect(() => {
-    if (isCreatingNote) {
-      setNoteUrl(window.location.href);
+const SUPABASE_URL = "http://127.0.0.1:54321"
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+const FloatingButton = () => {
+  // Create a new note overlay
+  const createNoteOverlay = async () => {
+    try {
+      // Get all existing overlays to calculate position
+      const overlays = await fetchOverlays();
+      
+      // Calculate position for new overlay
+      const position = calculateNextPosition(overlays);
+      
+      // Create the layout for the new note
+      const noteLayout: NoteLayout = {
+        type: "note",
+        style: {
+          top: position.top,
+          left: position.left,
+          width: 250,
+          backgroundColor: "white",
+          boxShadow: "0 4px 8px rgba(0,0,0,0.15)",
+          borderRadius: "8px",
+          padding: "16px"
+        },
+        content: "",
+        url: window.location.href // By default, only show on current page
+      };
+      
+      // Create the overlay in the database
+      await createOverlay("Note", noteLayout);
+    } catch (error) {
+      console.error("Error creating note overlay:", error);
     }
-  }, [isCreatingNote]);
+  };
   
-  // Fetch existing overlays to calculate the initial position
-  useEffect(() => {
-    if (isCreatingNote) {
-      fetchOverlays()
-        .then(overlays => {
-          const position = calculateNextPosition(overlays);
-          setNotePosition(position);
-        })
-        .catch(error => {
-          console.error("Error fetching overlays for positioning:", error);
-          // Use default position in case of error
-          setNotePosition({ top: 20, left: 20 });
-        });
+  // Create a new button overlay
+  const createButtonOverlay = async () => {
+    try {
+      // Get all existing overlays to calculate position
+      const overlays = await fetchOverlays();
+      
+      // Calculate position for new overlay
+      const position = calculateNextPosition(overlays);
+      
+      // Create the layout for the new button
+      const buttonLayout: ButtonLayout = {
+        type: "button",
+        style: {
+          top: position.top,
+          left: position.left,
+          backgroundColor: "white",
+          boxShadow: "0 4px 8px rgba(0,0,0,0.15)",
+          borderRadius: "8px",
+          padding: "16px",
+          minWidth: "120px",
+          minHeight: "60px"
+        },
+        label: "Click Me",
+        action: "alert",
+        color: "#4285F4",
+        url: window.location.href // By default, only show on current page
+      };
+      
+      // Create the overlay in the database
+      await createOverlay("Button", buttonLayout);
+    } catch (error) {
+      console.error("Error creating button overlay:", error);
     }
-  }, [isCreatingNote]);
+  };
   
-  // Style for the floating button
-  const buttonStyle: React.CSSProperties = {
+  // Create a new timer overlay
+  const createTimerOverlay = async () => {
+    try {
+      // Get all existing overlays to calculate position
+      const overlays = await fetchOverlays();
+      
+      // Calculate position for new overlay
+      const position = calculateNextPosition(overlays);
+      
+      // Create the layout for the new timer
+      const timerLayout: TimerLayout = {
+        type: "timer",
+        style: {
+          top: position.top,
+          left: position.left,
+          backgroundColor: "white",
+          boxShadow: "0 4px 8px rgba(0,0,0,0.15)",
+          borderRadius: "8px",
+          padding: "16px",
+          minWidth: "150px",
+          minHeight: "80px"
+        },
+        duration: 300, // 5 minutes
+        autoStart: false,
+        format: "mm:ss",
+        url: window.location.href // By default, only show on current page
+      };
+      
+      // Create the overlay in the database
+      await createOverlay("Timer", timerLayout);
+    } catch (error) {
+      console.error("Error creating timer overlay:", error);
+    }
+  };
+  
+  // Create a new search overlay
+  const createSearchOverlay = async () => {
+    try {
+      // Get all existing overlays to calculate position
+      const overlays = await fetchOverlays();
+      
+      // Calculate position for new overlay
+      const position = calculateNextPosition(overlays);
+      
+      // Create the layout for the new search box
+      const searchLayout: SearchLayout = {
+        type: "search",
+        style: {
+          top: position.top,
+          left: position.left,
+          backgroundColor: "white",
+          boxShadow: "0 4px 8px rgba(0,0,0,0.15)",
+          borderRadius: "8px",
+          padding: "16px",
+          minWidth: "200px",
+          minHeight: "50px"
+        },
+        placeholder: "Search...",
+        url: window.location.href // By default, only show on current page
+      };
+      
+      // Create the overlay in the database
+      await createOverlay("Search", searchLayout);
+    } catch (error) {
+      console.error("Error creating search overlay:", error);
+    }
+  };
+  
+  // Create a new Chat AI overlay
+  const createChatAiOverlay = async () => {
+    try {
+      // Get all existing overlays to calculate position
+      const overlays = await fetchOverlays();
+      
+      // Calculate position for new overlay
+      const position = calculateNextPosition(overlays);
+      
+      // Get API key from configuration
+      const apiKey = getOpenAIApiKey();
+      
+      // Create the layout for the new chat AI widget
+      const chatAiLayout: ChatAiLayout = {
+        type: "chatai",
+        style: {
+          top: position.top,
+          left: position.left,
+          width: "400px",
+          height: "500px"
+        },
+        messages: [],
+        url: window.location.href, // By default, only show on current page
+        apiKey: apiKey,
+        model: "gpt-3.5-turbo"
+      };
+      
+      // Create the overlay in the database
+      await createOverlay("ChatAI", chatAiLayout);
+    } catch (error) {
+      console.error("Error creating Chat AI overlay:", error);
+    }
+  };
+
+  // Menu container style
+  const menuContainerStyle: React.CSSProperties = {
     position: "fixed",
-    top: "20px",
-    right: "20px",
-    width: "50px",
-    height: "50px",
+    bottom: "20px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    display: "flex",
+    gap: "20px",
+    padding: "12px 20px",
+    backgroundColor: "white",
+    borderRadius: "12px",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.15)",
+    zIndex: 10000000,
+    border: "1px solid #eaeaea"
+  };
+
+  // Menu item style
+  const menuItemStyle: React.CSSProperties = {
+    width: "40px",
+    height: "40px",
     borderRadius: "50%",
-    backgroundColor: "#4285F4",
-    color: "white",
+    backgroundColor: "white",
+    color: "#333",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: "24px",
-    fontWeight: "bold",
+    fontSize: "18px",
     cursor: "pointer",
-    boxShadow: "0 4px 8px rgba(0,0,0,0.2)",
-    zIndex: 999999,
     border: "none",
-    pointerEvents: "auto"
-  }
+    transition: "transform 0.2s ease, box-shadow 0.2s ease",
+    boxShadow: "none"
+  };
 
-  // Calculate editor size based on content
-  const getEditorSize = () => {
-    const isShortContent = noteContent.length < 100;
-    return {
-      width: isShortContent ? Math.max(250, noteContent.length * 4) : 300,
-      minHeight: 200, // Editor always needs more space for editing
-    };
+  // Hover effect handled via JavaScript events
+  const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.style.transform = "scale(1.1)";
+    e.currentTarget.style.boxShadow = "0 2px 5px rgba(0,0,0,0.1)";
+  };
+
+  const handleMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.style.transform = "scale(1)";
+    e.currentTarget.style.boxShadow = "none";
   };
   
-  const { width: editorWidth } = getEditorSize();
-
-  // Style for the floating note editor
-  const noteEditorStyle: React.CSSProperties = {
-    position: "fixed",
-    top: notePosition.top,
-    left: notePosition.left,
-    width: `${editorWidth}px`,
-    minHeight: "200px",
-    backgroundColor: "white",
-    borderRadius: "8px",
-    boxShadow: "0 6px 12px rgba(0,0,0,0.15)",
-    zIndex: 999998,
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-    border: "1px solid #ddd",
-    pointerEvents: "auto"
-  }
-  
-  const textareaStyle: React.CSSProperties = {
-    width: "100%",
-    minHeight: "150px",
-    padding: "16px",
-    border: "none",
-    outline: "none",
-    resize: "vertical",
-    fontFamily: "sans-serif",
-    fontSize: "14px",
-    flex: 1
-  }
-  
-  const toolbarStyle: React.CSSProperties = {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "8px",
-    backgroundColor: "#f5f5f5",
-    borderTop: "1px solid #ddd"
-  }
-  
-  const handleCreateNote = () => {
-    setIsCreatingNote(true)
-  }
-  
-  const handleSaveNote = async () => {
-    if (noteContent.trim()) {
-      try {
-        // Calculate appropriate size based on content length
-        const isShortContent = noteContent.length < 100;
-        const width = isShortContent ? Math.max(200, noteContent.length * 4) : 300;
-        const minHeight = isShortContent ? 60 : 100;
-        const padding = isShortContent ? "12px 16px" : "16px";
-        
-        // Define the overlay configuration
-        const overlayConfig = {
-          style: {
-            top: notePosition.top,
-            left: notePosition.left,
-            width: width,
-            minHeight: minHeight,
-            backgroundColor: "white",
-            borderRadius: "8px",
-            boxShadow: "0 4px 8px rgba(0,0,0,0.15)",
-            padding: padding,
-            border: "1px solid #ddd",
-            fontSize: isShortContent ? "14px" : "16px"
-          },
-          content: noteContent,
-          url: noteUrl
-        }
-        
-        // Save to database
-        const result = await createOverlay("Note", overlayConfig)
-        
-        if (result) {
-          console.log("Note saved successfully:", result)
-          // Reset state
-          setNoteContent("")
-          setNoteUrl("")
-          setIsCreatingNote(false)
-        } else {
-          console.error("Failed to save note")
-          alert("Failed to save note. Please try again.")
-        }
-      } catch (error) {
-        console.error("Error saving note:", error)
-        alert("Error saving note. Please try again.")
-      }
-    } else {
-      alert("Please enter some text for your note.")
-    }
-  }
-  
-  const handleCancel = () => {
-    setNoteContent("")
-    setNoteUrl("")
-    setIsCreatingNote(false)
-  }
-  
-  // Enable dragging of the note
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    
-    // Get initial positions
-    const startX = e.clientX
-    const startY = e.clientY
-    const startLeft = notePosition.left
-    const startTop = notePosition.top
-    
-    // Handle mouse move
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX
-      const deltaY = moveEvent.clientY - startY
-      
-      setNotePosition({
-        left: startLeft + deltaX,
-        top: startTop + deltaY
-      })
-    }
-    
-    // Handle mouse up
-    const handleMouseUp = () => {
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
-    }
-    
-    // Add event listeners
-    document.addEventListener("mousemove", handleMouseMove)
-    document.addEventListener("mouseup", handleMouseUp)
-  }
-  
   return (
-    <>
-      {/* Floating add button */}
-      {!isCreatingNote && (
-        <button style={buttonStyle} onClick={handleCreateNote} title="Create new note">
-          +
-        </button>
-      )}
-      
-      {/* Note editor */}
-      {isCreatingNote && (
-        <div style={noteEditorStyle}>
-          <div 
-            style={{ 
-              padding: "8px 12px", 
-              backgroundColor: "#4285F4", 
-              color: "white",
-              cursor: "move",
-              userSelect: "none"
-            }}
-            onMouseDown={handleMouseDown}
-          >
-            New Note
-          </div>
-          <textarea 
-            style={textareaStyle}
-            value={noteContent}
-            onChange={(e) => setNoteContent(e.target.value)}
-            placeholder="Enter your note here..."
-            autoFocus
-          />
-          <div style={{
-            padding: "8px 16px",
-            borderTop: "1px solid #eee"
-          }}>
-            <label style={{ display: "block", marginBottom: "4px", fontSize: "12px", color: "#555" }}>
-              Show on URL (leave empty for all pages):
-            </label>
-            <input
-              type="text"
-              value={noteUrl}
-              onChange={(e) => setNoteUrl(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "6px",
-                border: "1px solid #ddd",
-                borderRadius: "4px",
-                fontSize: "12px"
-              }}
-              placeholder="https://example.com/page"
-            />
-          </div>
-          <div style={toolbarStyle}>
-            <button 
-              onClick={handleCancel}
-              style={{ 
-                padding: "6px 12px", 
-                backgroundColor: "#f5f5f5", 
-                border: "1px solid #ccc",
-                borderRadius: "4px",
-                cursor: "pointer"
-              }}
-            >
-              Cancel
-            </button>
-            <button 
-              onClick={handleSaveNote}
-              style={{ 
-                padding: "6px 12px", 
-                backgroundColor: "#4285F4", 
-                color: "white",
-                border: "none",
-                borderRadius: "4px",
-                cursor: "pointer"
-              }}
-            >
-              Save Note
-            </button>
-          </div>
+    <div className="floating-button-container">
+      {/* Always visible action buttons */}
+      <div style={menuContainerStyle}>
+        {/* Note option */}
+        <div 
+          style={{
+            ...menuItemStyle,
+            color: "#34A853" // Green
+          }} 
+          onClick={createNoteOverlay}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          title="Add Note"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 2V5" stroke="#34A853" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M16 2V5" stroke="#34A853" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M3 8H21" stroke="#34A853" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M16 14H8" stroke="#34A853" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M12 10V18" stroke="#34A853" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M19 5H5C3.895 5 3 5.895 3 7V19C3 20.105 3.895 21 5 21H19C20.105 21 21 20.105 21 19V7C21 5.895 20.105 5 19 5Z" stroke="#34A853" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
         </div>
-      )}
-    </>
-  )
-}
+        
+        {/* Button option */}
+        <div 
+          style={{ 
+            ...menuItemStyle,
+            color: "#FBBC05" // Yellow
+          }} 
+          onClick={createButtonOverlay}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          title="Add Button"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3" y="5" width="18" height="14" rx="4" stroke="#FBBC05" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M8 12H16" stroke="#FBBC05" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        
+        {/* Timer option */}
+        <div 
+          style={{ 
+            ...menuItemStyle,
+            color: "#EA4335" // Red
+          }} 
+          onClick={createTimerOverlay}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          title="Add Timer"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="9" stroke="#EA4335" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M12 7V12L15 15" stroke="#EA4335" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        
+        {/* Search option */}
+        <div 
+          style={{ 
+            ...menuItemStyle,
+            color: "#9C27B0" // Purple
+          }} 
+          onClick={createSearchOverlay}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          title="Add Search"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="11" cy="11" r="7" stroke="#9C27B0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M16 16L20 20" stroke="#9C27B0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
+};
 
-export default FloatingButton 
+export default FloatingButton; 

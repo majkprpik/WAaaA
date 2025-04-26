@@ -1,61 +1,63 @@
 import { createClient } from "@supabase/supabase-js"
+import cssText from "data-text:~global.css"
 import React, { useEffect, useState } from "react"
 import ReactDOM from "react-dom/client"
 
+import DynamicOverlay from "../DynamicOverlay"
+import FloatingButton from "../FloatingButton"
 import {
   OverlayBottomLeft,
   OverlayBottomRight,
   OverlayTopLeft,
   OverlayTopRight
 } from "../Overlays"
-import DynamicOverlay from "../DynamicOverlay"
-import FloatingButton from "../FloatingButton"
+import OverlayFactory from "../components/OverlayFactory"
+import type { OverlayData, OverlayLayout } from "../utils/createOverlay"
+import { initKeyboardShortcuts } from "../utils/keyboardShortcuts"
+import PersistentAIChat from "../components/PersistentAIChat"
 
 const SUPABASE_URL = "http://127.0.0.1:54321"
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
+export const getStyle = () => {
+  const style = document.createElement("style")
+  style.textContent = cssText
+  return style
+}
+
 // Create container safely
-let container: HTMLDivElement | null = null;
+let container: HTMLDivElement | null = null
 try {
-  if (typeof document !== 'undefined') {
+  if (typeof document !== "undefined") {
     // Check if container already exists to prevent double initialization
-    const existingContainer = document.getElementById("plasmo-overlays-container");
-    
+    const existingContainer = document.getElementById(
+      "plasmo-overlays-container"
+    )
+
     if (existingContainer) {
-      container = existingContainer as HTMLDivElement;
-      console.log("Using existing overlay container");
+      container = existingContainer as HTMLDivElement
+      console.log("Using existing overlay container")
     } else {
-      container = document.createElement("div");
-      container.id = "plasmo-overlays-container";
-      
+      container = document.createElement("div")
+      container.id = "plasmo-overlays-container"
+
       // Apply styles to allow click-through by default
-      container.style.position = "fixed";
-      container.style.top = "0";
-      container.style.left = "0";
-      container.style.width = "100%";
-      container.style.height = "100%";
-      container.style.pointerEvents = "none"; // This allows clicks to pass through
-      container.style.zIndex = "9999";
-      
-      document.body.appendChild(container);
-      console.log("Created new overlay container");
+      container.style.position = "fixed"
+      container.style.top = "0"
+      container.style.left = "0"
+      container.style.width = "100%"
+      container.style.height = "100%"
+      container.style.pointerEvents = "none" // This allows clicks to pass through
+      container.style.zIndex = "9999"
+
+      document.body.appendChild(container)
+      console.log("Created new overlay container")
     }
   }
 } catch (error) {
-  console.error("Error creating container:", error);
-}
-
-interface OverlayData {
-  id: number;
-  name: string;
-  path?: string;
-  layout?: {
-    style: React.CSSProperties;
-    content: string;
-    url?: string;
-  };
+  console.error("Error creating container:", error)
 }
 
 // Define the OverlayRoot component
@@ -66,7 +68,7 @@ const OverlayRoot = () => {
 
   // Set current URL when component mounts
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       setCurrentUrl(window.location.href)
     }
   }, [])
@@ -80,11 +82,14 @@ const OverlayRoot = () => {
 
     // If URL is specified, check if current URL matches or starts with it
     const overlayUrl = overlay.layout.url.trim()
-    return overlayUrl === "" || 
-           currentUrl === overlayUrl || 
-           currentUrl.startsWith(overlayUrl) ||
-           // Support for basic wildcard matching (e.g., "example.com/*")
-           (overlayUrl.endsWith('*') && currentUrl.startsWith(overlayUrl.slice(0, -1)))
+    return (
+      overlayUrl === "" ||
+      currentUrl === overlayUrl ||
+      currentUrl.startsWith(overlayUrl) ||
+      // Support for basic wildcard matching (e.g., "example.com/*")
+      (overlayUrl.endsWith("*") &&
+        currentUrl.startsWith(overlayUrl.slice(0, -1)))
+    )
   }
 
   // Function to fetch overlays from Supabase
@@ -95,15 +100,17 @@ const OverlayRoot = () => {
         console.error("Error fetching overlays:", error)
         return
       }
-      
+
       console.log("Fetched overlays:", data)
-      
+
       // Filter overlays with layout data
-      const layoutBased = data.filter(overlay => overlay.layout && Object.keys(overlay.layout).length > 0)
+      const layoutBased = data.filter(
+        (overlay) => overlay.layout && Object.keys(overlay.layout).length > 0
+      )
       setLayoutOverlays(layoutBased)
-      
+
       // Handle path-based module loading
-      const pathBased = data.filter(overlay => overlay.path)
+      const pathBased = data.filter((overlay) => overlay.path)
       const loaded = await Promise.all(
         pathBased.map(async (overlay) => {
           try {
@@ -111,7 +118,10 @@ const OverlayRoot = () => {
             const mod = await import(/* @vite-ignore */ overlay.path)
             return mod.default ? React.createElement(mod.default) : null
           } catch (error) {
-            console.error(`Error loading overlay from path ${overlay.path}:`, error)
+            console.error(
+              `Error loading overlay from path ${overlay.path}:`,
+              error
+            )
             return null
           }
         })
@@ -122,25 +132,57 @@ const OverlayRoot = () => {
     }
   }
 
+  // Handle the deletion of an overlay
+  const handleOverlayDelete = (id: number) => {
+    console.log(`Overlay ${id} was deleted, updating list`);
+    // Remove from local state immediately for a smoother UX
+    setLayoutOverlays(prevOverlays => prevOverlays.filter(overlay => overlay.id !== id));
+    // The database change will trigger a refresh via subscription
+  };
+  
+  // Handle pinning/unpinning an overlay
+  const handleOverlayPin = (id: number, isPinned: boolean) => {
+    console.log(`Overlay ${id} was ${isPinned ? 'pinned' : 'unpinned'}`);
+    
+    // Update the local state for immediate visual feedback
+    setLayoutOverlays(prevOverlays => 
+      prevOverlays.map(overlay => 
+        overlay.id === id 
+          ? {
+              ...overlay,
+              layout: {
+                ...overlay.layout,
+                url: isPinned ? "" : window.location.href
+              }
+            }
+          : overlay
+      )
+    );
+    // The rest will be handled by database subscription
+  };
+  
   useEffect(() => {
     // Initial fetch
     fetchOverlays()
+    
+    // Initialize keyboard shortcuts
+    initKeyboardShortcuts()
     
     let subscription: { unsubscribe: () => void } | null = null;
     
     try {
       // Subscribe to changes in the overlays table
       subscription = supabase
-        .channel('table-changes')
+        .channel("table-changes")
         .on(
-          'postgres_changes',
+          "postgres_changes",
           {
-            event: '*', // Listen to all events (INSERT, UPDATE, DELETE)
-            schema: 'public',
-            table: 'overlays'
+            event: "*", // Listen to all events (INSERT, UPDATE, DELETE)
+            schema: "public",
+            table: "overlays"
           },
           (payload) => {
-            console.log('Change received:', payload)
+            console.log("Change received:", payload)
             // Refetch overlays when any change happens
             fetchOverlays()
           }
@@ -151,7 +193,7 @@ const OverlayRoot = () => {
     } catch (error) {
       console.error("Error setting up real-time subscription:", error)
     }
-    
+
     // Cleanup subscription on unmount
     return () => {
       if (subscription) {
@@ -166,54 +208,77 @@ const OverlayRoot = () => {
 
   return (
     <>
+      {/* Add persistent AI Chat in top-right corner */}
+      <div style={{
+        position: "fixed",
+        top: "20px",
+        right: "20px",
+        zIndex: 10000000,
+        width: "400px",
+        height: "500px",
+        pointerEvents: "auto"
+      }}>
+        <PersistentAIChat />
+      </div>
+      
       {/* Add the floating button for creating new notes */}
       <FloatingButton />
-      
+
       {/* <OverlayTopLeft />
       <OverlayTopRight />
       <OverlayBottomLeft />
       <OverlayBottomRight /> */}
-      
+
       {/* Render dynamic modules */}
       {dynamicOverlays.map((Comp, i) => (
         <React.Fragment key={`dynamic-${i}`}>{Comp}</React.Fragment>
       ))}
-      
+
       {/* Render layout-based overlays that match the current URL */}
       {layoutOverlays
         .filter(shouldShowOverlay)
         .map((overlay) => (
-          <DynamicOverlay 
-            key={`layout-${overlay.id}`}
-            id={overlay.id}
-            style={overlay.layout?.style || {}} 
-            content={overlay.layout?.content || ''}
-            url={overlay.layout?.url || ''}
-          />
+          <div 
+            key={`overlay-container-${overlay.id}`} 
+            style={{ 
+              position: 'absolute', 
+              top: 0, 
+              left: 0, 
+              height: 0, 
+              width: 0, 
+              overflow: 'visible',
+            }}
+          >
+            <OverlayFactory 
+              overlay={overlay}
+              onDelete={handleOverlayDelete}
+              onPin={handleOverlayPin}
+            />
+          </div>
         ))}
     </>
   )
 }
 
 // Export as default for use as a content script
-export default OverlayRoot;
+export default OverlayRoot
 
 // Handle rendering for content script
 function initContentScript() {
-  if (typeof window !== 'undefined' && container) {
+  if (typeof window !== "undefined" && container) {
     try {
       // Check if there's already a React root rendering to this container
       if (!(container as any).__reactRoot) {
-        console.log("Initializing overlay content script");
-        const root = ReactDOM.createRoot(container);
+        console.log("Initializing overlay content script")
+        const root = ReactDOM.createRoot(container)
         // Store the root on the container to prevent duplicate initialization
-        (container as any).__reactRoot = root;
-        root.render(<OverlayRoot />);
+        ;(container as any).__reactRoot = root
+        root.render(<OverlayRoot />)
       } else {
-        console.log("Overlay content script already initialized");
+        console.log("Overlay content script already initialized")
       }
     } catch (error) {
-      console.error("Error rendering overlay root:", error);
+      console.error("Error rendering overlay root:", error)
     }
   }
 }

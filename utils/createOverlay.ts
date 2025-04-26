@@ -5,7 +5,8 @@ const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-interface OverlayLayout {
+// Define common interface for all overlay types
+export interface BaseLayoutProps {
   style: {
     top?: number;
     left?: number;
@@ -18,9 +19,69 @@ interface OverlayLayout {
     backgroundColor?: string;
     [key: string]: any;
   };
-  content: string;
   url?: string;
 }
+
+// Standard note overlay
+export interface NoteLayout extends BaseLayoutProps {
+  type: "note";
+  content: string;
+}
+
+// Button overlay
+export interface ButtonLayout extends BaseLayoutProps {
+  type: "button";
+  label: string;
+  action?: string; // Action identifier or function name
+  color?: string;
+  icon?: string;
+}
+
+// Timer overlay
+export interface TimerLayout extends BaseLayoutProps {
+  type: "timer";
+  duration: number; // in seconds
+  autoStart?: boolean;
+  format?: string;
+  onComplete?: string; // Action to perform when timer completes
+}
+
+// Search overlay
+export interface SearchLayout extends BaseLayoutProps {
+  type: "search";
+  placeholder?: string;
+  target?: string; // Where to search
+  suggestions?: string[];
+}
+
+// Chat AI overlay
+export interface ChatAiLayout extends BaseLayoutProps {
+  type: "chatai";
+  title?: string;
+  placeholder?: string;
+  messages?: Array<{
+    role: "user" | "assistant";
+    content: string;
+    timestamp?: number;
+  }>;
+  apiKey?: string;
+  model?: string;
+}
+
+// Any other overlay type
+export interface CustomLayout extends BaseLayoutProps {
+  type: string;
+  [key: string]: any;
+}
+
+// Union type for all overlay layouts
+export type OverlayLayout = 
+  | NoteLayout 
+  | ButtonLayout 
+  | TimerLayout 
+  | SearchLayout 
+  | ChatAiLayout
+  | CustomLayout;
 
 export interface OverlayData {
   id: number;
