@@ -12,27 +12,27 @@ container.id = "plasmo-overlays-container"
 document.body.appendChild(container)
 
 function OverlayRoot() {
-  const [dynamicOverlays, setDynamicOverlays] = useState([])
+  // const [dynamicOverlays, setDynamicOverlays] = useState([])
 
-  useEffect(() => {
-    async function fetchOverlays() {
-      const { data, error } = await supabase.from("overlays").select()
-      if (error) return
-      // Assume data is an array of { name: string, path: string }
-      const loaded = await Promise.all(
-        data.map(async (overlay) => {
-          try {
-            const mod = await import(/* @vite-ignore */ overlay.path)
-            return mod.default ? React.createElement(mod.default) : null
-          } catch {
-            return null
-          }
-        })
-      )
-      setDynamicOverlays(loaded.filter(Boolean))
-    }
-    fetchOverlays()
-  }, [])
+  // useEffect(() => {
+  //   async function fetchOverlays() {
+  //     const { data, error } = await supabase.from("overlays").select()
+  //     if (error) return
+  //     // Assume data is an array of { name: string, path: string }
+  //     const loaded = await Promise.all(
+  //       data.map(async (overlay) => {
+  //         try {
+  //           const mod = await import(/* @vite-ignore */ overlay.path)
+  //           return mod.default ? React.createElement(mod.default) : null
+  //         } catch {
+  //           return null
+  //         }
+  //       })
+  //     )
+  //     setDynamicOverlays(loaded.filter(Boolean))
+  //   }
+  //   fetchOverlays()
+  // }, [])
 
   return (
     <>
@@ -40,9 +40,9 @@ function OverlayRoot() {
       <OverlayTopRight />
       <OverlayBottomLeft />
       <OverlayBottomRight />
-      {dynamicOverlays.map((Comp, i) => (
+      {/* {dynamicOverlays.map((Comp, i) => (
         <React.Fragment key={i}>{Comp}</React.Fragment>
-      ))}
+      ))} */}
     </>
   )
 }
