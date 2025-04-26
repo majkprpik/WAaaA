@@ -3,14 +3,7 @@ import cssText from "data-text:~global.css"
 import React, { useEffect, useState } from "react"
 import ReactDOM from "react-dom/client"
 
-import DynamicOverlay from "../DynamicOverlay"
 import FloatingButton from "../FloatingButton"
-import {
-  OverlayBottomLeft,
-  OverlayBottomRight,
-  OverlayTopLeft,
-  OverlayTopRight
-} from "../Overlays"
 import OverlayFactory from "../components/OverlayFactory"
 import type { OverlayData, OverlayLayout } from "../utils/createOverlay"
 import { initKeyboardShortcuts } from "../utils/keyboardShortcuts"
@@ -103,14 +96,87 @@ const OverlayRoot = () => {
 
       console.log("Fetched overlays:", data)
 
-      // Filter overlays with layout data
-      const layoutBased = data.filter(
+      // Get current username from background script
+      let currentUsername = "anonymous";
+      try {
+        const response = await new Promise<any>((resolve) => {
+          chrome.runtime.sendMessage({ action: "get_username" }, (response) => {
+            resolve(response);
+          });
+        });
+        
+        if (response && response.username) {
+          currentUsername = response.username;
+        }
+      } catch (error) {
+        console.error("Error getting username from background:", error);
+        // Fallback to localStorage only as a backup
+        currentUsername = localStorage.getItem("overlay_username") || "anonymous";
+      }
+      
+      console.log("Current username for overlay filtering:", currentUsername);
+      
+      // Filter overlays that are shared with the current user
+      // This checks if the users field contains the current username (either exact match or as part of a semicolon-separated list)
+      const userFiltered = data.filter(overlay => {
+        // If no users field, don't show the overlay
+        if (!overlay.users) {
+          console.log(`Overlay ${overlay.id} has no users field, skipping`);
+          return false;
+        }
+        
+        // Split the users field by semicolon and check if the current username is included
+        const usersList = overlay.users.split(";").map(u => u.trim());
+        
+        // Check for direct match with current username
+        let isSharedWithUser = usersList.includes(currentUsername);
+        
+        // Handle legacy format (User1, User2, User3) mapping
+        if (!isSharedWithUser) {
+          // Map current username to legacy format
+          const legacyMapping: Record<string, string> = {
+            'vedran': 'User1',
+            'bruno': 'User2',
+            'marko': 'User3'
+          };
+          
+          // Map legacy format to current username
+          const modernMapping: Record<string, string> = {
+            'User1': 'vedran',
+            'User2': 'bruno',
+            'User3': 'marko'
+          };
+          
+          // Check if the username in legacy format is included
+          if (legacyMapping[currentUsername] && usersList.includes(legacyMapping[currentUsername])) {
+            isSharedWithUser = true;
+          }
+          
+          // Or check if a legacy username in the list maps to the current username
+          for (const user of usersList) {
+            if (modernMapping[user] === currentUsername) {
+              isSharedWithUser = true;
+              break;
+            }
+          }
+        }
+        
+        // Debug log for each overlay with expanded info
+        console.log(`Overlay ${overlay.id} - users: ${overlay.users}, includes ${currentUsername}? ${isSharedWithUser}`);
+        
+        return isSharedWithUser;
+      });
+      
+      console.log("Overlays filtered by username:", userFiltered);
+
+      // Filter overlays with layout data from the user-filtered list
+      const layoutBased = userFiltered.filter(
         (overlay) => overlay.layout && Object.keys(overlay.layout).length > 0
       )
       setLayoutOverlays(layoutBased)
 
-      // Handle path-based module loading
-      const pathBased = data.filter((overlay) => overlay.path)
+      // Handle path-based module loading - also filter by user
+      const pathBased = userFiltered.filter((overlay) => overlay.path)
       const loaded = await Promise.all(
         pathBased.map(async (overlay) => {
           try {
@@ -208,17 +274,17 @@ const OverlayRoot = () => {
 
   return (
     <>
-      {/* Add persistent AI Chat in top-right corner */}
+      {/* Add persistent AI Chat in bottom-right corner */}
       <div style={{
         position: "fixed",
-        top: "20px",
+        bottom: "20px",
         right: "20px",
         zIndex: 10000000,
         width: "400px",
-        height: "500px",
+        height: "400px",
         pointerEvents: "auto"
       }}>
-        <PersistentAIChat />
+       <PersistentAIChat />
       </div>
       
       {/* Add the floating button for creating new notes */}

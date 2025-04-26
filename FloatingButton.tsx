@@ -1,7 +1,7 @@
 import React from "react"
 import { createClient } from "@supabase/supabase-js"
 import { calculateNextPosition } from "./utils/overlayPositioning"
-import { fetchOverlays, createOverlay } from "./utils/createOverlay"
+import { fetchOverlays, createOverlayWithCurrentUsername } from "./utils/createOverlay"
 import type { NoteLayout, ButtonLayout, TimerLayout, SearchLayout, ChatAiLayout } from "./utils/createOverlay"
 import { getOpenAIApiKey } from "./components/ApiKeyConfig"
 
@@ -11,6 +11,19 @@ const SUPABASE_ANON_KEY =
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 const FloatingButton = () => {
+  // Helper function to get username from background script
+  const getUsernameFromBackground = () => {
+    return new Promise<string>((resolve) => {
+      chrome.runtime.sendMessage({ action: "get_username" }, (response) => {
+        if (response && response.username) {
+          resolve(response.username);
+        } else {
+          resolve("anonymous");
+        }
+      });
+    });
+  };
+
   // Create a new note overlay
   const createNoteOverlay = async () => {
     try {
@@ -19,6 +32,10 @@ const FloatingButton = () => {
       
       // Calculate position for new overlay
       const position = calculateNextPosition(overlays);
+      
+      // Get current username from background script
+      const currentUsername = await getUsernameFromBackground();
+      console.log("Using username from background:", currentUsername);
       
       // Create the layout for the new note
       const noteLayout: NoteLayout = {
@@ -37,7 +54,25 @@ const FloatingButton = () => {
       };
       
       // Create the overlay in the database
-      await createOverlay("Note", noteLayout);
+      const overlayData = {
+        name: "Note",
+        layout: noteLayout,
+        users: currentUsername // Add the current username
+      };
+      
+      console.log("Sending overlay data with users:", overlayData.users);
+      
+      // Use raw insert to include users field
+      const { data, error } = await supabase
+        .from("overlays")
+        .insert(overlayData)
+        .select();
+        
+      if (error) {
+        throw error;
+      }
+      
+      console.log("Created overlay with data:", data);
     } catch (error) {
       console.error("Error creating note overlay:", error);
     }
@@ -51,6 +86,9 @@ const FloatingButton = () => {
       
       // Calculate position for new overlay
       const position = calculateNextPosition(overlays);
+
+      // Get current username from background script
+      const currentUsername = await getUsernameFromBackground();
       
       // Create the layout for the new button
       const buttonLayout: ButtonLayout = {
@@ -72,7 +110,20 @@ const FloatingButton = () => {
       };
       
       // Create the overlay in the database
-      await createOverlay("Button", buttonLayout);
+      const overlayData = {
+        name: "Button",
+        layout: buttonLayout,
+        users: currentUsername // Add the current username
+      };
+      
+      // Use raw insert to include users field
+      const { error } = await supabase
+        .from("overlays")
+        .insert(overlayData);
+        
+      if (error) {
+        throw error;
+      }
     } catch (error) {
       console.error("Error creating button overlay:", error);
     }
@@ -86,6 +137,9 @@ const FloatingButton = () => {
       
       // Calculate position for new overlay
       const position = calculateNextPosition(overlays);
+
+      // Get current username from background script
+      const currentUsername = await getUsernameFromBackground();
       
       // Create the layout for the new timer
       const timerLayout: TimerLayout = {
@@ -107,7 +161,20 @@ const FloatingButton = () => {
       };
       
       // Create the overlay in the database
-      await createOverlay("Timer", timerLayout);
+      const overlayData = {
+        name: "Timer",
+        layout: timerLayout,
+        users: currentUsername // Add the current username
+      };
+      
+      // Use raw insert to include users field
+      const { error } = await supabase
+        .from("overlays")
+        .insert(overlayData);
+        
+      if (error) {
+        throw error;
+      }
     } catch (error) {
       console.error("Error creating timer overlay:", error);
     }
@@ -121,6 +188,9 @@ const FloatingButton = () => {
       
       // Calculate position for new overlay
       const position = calculateNextPosition(overlays);
+
+      // Get current username from background script
+      const currentUsername = await getUsernameFromBackground();
       
       // Create the layout for the new search box
       const searchLayout: SearchLayout = {
@@ -140,7 +210,20 @@ const FloatingButton = () => {
       };
       
       // Create the overlay in the database
-      await createOverlay("Search", searchLayout);
+      const overlayData = {
+        name: "Search",
+        layout: searchLayout,
+        users: currentUsername // Add the current username
+      };
+      
+      // Use raw insert to include users field
+      const { error } = await supabase
+        .from("overlays")
+        .insert(overlayData);
+        
+      if (error) {
+        throw error;
+      }
     } catch (error) {
       console.error("Error creating search overlay:", error);
     }
@@ -155,6 +238,9 @@ const FloatingButton = () => {
       // Calculate position for new overlay
       const position = calculateNextPosition(overlays);
       
+      // Get current username from background script
+      const currentUsername = await getUsernameFromBackground();
+      
       // Get API key from configuration
       const apiKey = getOpenAIApiKey();
       
@@ -165,7 +251,7 @@ const FloatingButton = () => {
           top: position.top,
           left: position.left,
           width: "400px",
-          height: "500px"
+          height: "400px"
         },
         messages: [],
         url: window.location.href, // By default, only show on current page
@@ -173,8 +259,21 @@ const FloatingButton = () => {
         model: "gpt-3.5-turbo"
       };
       
-      // Create the overlay in the database
-      await createOverlay("ChatAI", chatAiLayout);
+      // Create the overlay in the database with the current username
+      const overlayData = {
+        name: "ChatAI",
+        layout: chatAiLayout,
+        users: currentUsername // Add the current username
+      };
+      
+      // Use raw insert to include users field
+      const { error } = await supabase
+        .from("overlays")
+        .insert(overlayData);
+        
+      if (error) {
+        throw error;
+      }
     } catch (error) {
       console.error("Error creating Chat AI overlay:", error);
     }
@@ -305,3 +404,4 @@ const FloatingButton = () => {
 };
 
 export default FloatingButton; 
+

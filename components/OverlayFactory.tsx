@@ -1,8 +1,20 @@
 import React, { useState, useRef, useEffect } from "react";
-import type { OverlayLayout, NoteLayout, ButtonLayout, TimerLayout, SearchLayout, ChatAiLayout } from "../utils/createOverlay";
+import type { 
+  OverlayLayout, 
+  NoteLayout, 
+  ButtonLayout, 
+  TimerLayout, 
+  SearchLayout, 
+  ChatAiLayout, 
+  FormLayout,
+  GridLayout 
+} from "../utils/createOverlay";
 import DynamicOverlay from "../DynamicOverlay";
 import { createClient } from "@supabase/supabase-js";
 import { getOpenAIApiKey, saveOpenAIApiKey } from "./ApiKeyConfig";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Copy, SendHorizontal, User } from "lucide-react";
 
 const SUPABASE_URL = "http://127.0.0.1:54321";
 const SUPABASE_ANON_KEY =
@@ -17,7 +29,8 @@ const BaseCustomOverlay: React.FC<any> = ({
   zIndex, 
   onDelete, 
   onPin, 
-  children 
+  children,
+  ...props
 }) => {
   const [isPinned, setIsPinned] = useState(url === "" || !url);
   const [position, setPosition] = useState({
@@ -26,11 +39,28 @@ const BaseCustomOverlay: React.FC<any> = ({
   });
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [showProfileIcons, setShowProfileIcons] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
   
   // Refs to store event handlers
   const mouseMoveHandlerRef = useRef<((e: MouseEvent) => void) | null>(null);
   const mouseUpHandlerRef = useRef<((e: MouseEvent) => void) | null>(null);
+  
+  // Close profile icons when clicking outside
+  useEffect(() => {
+    if (showProfileIcons) {
+      const handleClickOutside = (e: MouseEvent) => {
+        if (overlayRef.current && !overlayRef.current.contains(e.target as Node)) {
+          setShowProfileIcons(false);
+        }
+      };
+      
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showProfileIcons]);
   
   // Clean up event listeners when component unmounts
   useEffect(() => {
@@ -277,13 +307,18 @@ const BaseCustomOverlay: React.FC<any> = ({
     border: style.border || "1px solid #ccc",
     borderRadius: style.borderRadius || "4px",
     boxShadow: isDragging ? "0 6px 16px rgba(0,0,0,0.2)" : (isHovered ? "0 4px 12px rgba(0,0,0,0.15)" : "0 2px 8px rgba(0,0,0,0.1)"),
-    padding: "16px",
+    padding: style.padding !== undefined ? style.padding : "16px",
     minWidth: "150px",
     minHeight: "40px",
+    maxHeight: style.height ? style.height : "80vh",
+    maxWidth: style.width ? style.width : "90vw",
+    width: style.width ? style.width : "auto",
+    height: style.height ? style.height : "auto",
     display: "flex",
     flexDirection: "column",
     cursor: isDragging ? "grabbing" : "grab",
-    transition: isDragging ? "none" : "box-shadow 0.2s ease"
+    transition: isDragging ? "none" : "box-shadow 0.2s ease",
+    overflow: "hidden"
   };
   
   return (
@@ -302,7 +337,8 @@ const BaseCustomOverlay: React.FC<any> = ({
           top: "3px",
           right: "3px",
           display: "flex",
-          gap: "4px"
+          gap: "4px",
+          zIndex: 1
         }}
       >
         {/* Pin button */}
@@ -348,8 +384,387 @@ const BaseCustomOverlay: React.FC<any> = ({
         </button>
       </div>
       
+      {/* Right side buttons - copy and send */}
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          right: "-36px",
+          transform: "translateY(-50%)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "8px",
+          padding: "3px",
+          zIndex: 1
+        }}
+      >
+        {/* Copy button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+            // Get content to copy - could be different based on overlay type
+            let contentToCopy = "";
+            if ('content' in props) {
+              contentToCopy = props.content;
+            } else if (children) {
+              // Try to extract text content from children
+              const tempDiv = document.createElement('div');
+              tempDiv.appendChild(React.cloneElement(children as React.ReactElement).props.children);
+              contentToCopy = tempDiv.textContent || "";
+            }
+            
+            if (contentToCopy) {
+              navigator.clipboard.writeText(contentToCopy);
+              console.log("Content copied to clipboard");
+            }
+          }}
+          style={{
+            backgroundColor: "#f5f5f5",
+            color: "#666",
+            border: "none",
+            borderRadius: "3px",
+            width: "28px",
+            height: "28px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            fontSize: "12px"
+          }}
+          title="Copy content"
+        >
+          <Copy size={16} />
+        </button>
+        
+        {/* Send button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+            setShowProfileIcons(!showProfileIcons);
+          }}
+          style={{
+            backgroundColor: "#f5f5f5",
+            color: "#666",
+            border: "none",
+            borderRadius: "3px",
+            width: "28px",
+            height: "28px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            fontSize: "12px"
+          }}
+          title="Send to another user"
+        >
+          <SendHorizontal size={16} />
+        </button>
+        
+        {/* Add Copy Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+            
+            // Copy overlay to current user
+            const copyToCurrentUser = async () => {
+              if (!id) return;
+              
+              try {
+                // Get current username from background script
+                let currentUsername = "anonymous";
+                try {
+                  const response = await new Promise<any>((resolve) => {
+                    chrome.runtime.sendMessage({ action: "get_username" }, (response) => {
+                      resolve(response);
+                    });
+                  });
+                  
+                  if (response && response.username) {
+                    currentUsername = response.username;
+                  }
+                } catch (error) {
+                  console.error("Error getting username from background:", error);
+                  // Fallback to localStorage only as a backup
+                  currentUsername = localStorage.getItem("overlay_username") || "anonymous";
+                }
+                
+                // Get current overlay data
+                const { data: overlayData, error: fetchError } = await supabase
+                  .from("overlays")
+                  .select("*")
+                  .eq("id", id)
+                  .single();
+                  
+                if (fetchError) throw fetchError;
+                
+                // Create a new overlay with the same layout but for current user
+                const newOverlay = {
+                  name: overlayData.name,
+                  layout: overlayData.layout,
+                  users: currentUsername
+                };
+                
+                // Insert new overlay
+                const { error } = await supabase
+                  .from("overlays")
+                  .insert(newOverlay);
+                  
+                if (error) throw error;
+                
+                console.log("Overlay copied successfully for", currentUsername);
+              } catch (error) {
+                console.error("Error copying overlay:", error);
+              }
+            };
+            
+            copyToCurrentUser();
+          }}
+          style={{
+            backgroundColor: "#00B0FF",
+            color: "white",
+            border: "none",
+            borderRadius: "3px",
+            width: "28px",
+            height: "28px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            fontSize: "12px",
+            marginLeft: "4px"
+          }}
+          title="Copy overlay for yourself"
+        >
+          <Copy size={16} />
+        </button>
+        
+        {/* Profile icons that appear when send is clicked */}
+        {showProfileIcons && (
+          <div style={{
+            position: "absolute",
+            top: "50%",
+            right: "70px",  // Adjusted position to account for the new Copy button
+            transform: "translateY(-50%)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+            padding: "8px",
+            backgroundColor: "white",
+            borderRadius: "8px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+            zIndex: 2,
+            width: "96px" // Make container a bit wider to fit buttons
+          }}>
+            {/* Vedran */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+                
+                // Share overlay with Vedran
+                const shareWithUser = async () => {
+                  if (!id) return;
+                  
+                  try {
+                    // Get current overlay data
+                    const { data: overlayData, error: fetchError } = await supabase
+                      .from("overlays")
+                      .select("users")
+                      .eq("id", id)
+                      .single();
+                      
+                    if (fetchError) throw fetchError;
+                    
+                    // Add Vedran to users list with semicolon delimiter
+                    const currentUsers = overlayData?.users || "";
+                    const usersList = currentUsers.split(";").filter(user => user.trim() !== "");
+                    
+                    // Add Vedran if not already in the list
+                    if (!usersList.includes("vedran")) {
+                      usersList.push("vedran");
+                    }
+                    
+                    // Update the users field
+                    const updatedUsers = usersList.join(";");
+                    
+                    const { error } = await supabase
+                      .from("overlays")
+                      .update({ users: updatedUsers })
+                      .eq("id", id);
+                      
+                    if (error) throw error;
+                    
+                    console.log("Overlay shared with Vedran successfully");
+                  } catch (error) {
+                    console.error("Error sharing overlay with Vedran:", error);
+                  }
+                };
+                
+                shareWithUser();
+                setShowProfileIcons(false);
+              }}
+              style={{
+                backgroundColor: "#FF6B6B",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                width: "80px",
+                height: "30px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer"
+              }}
+              title="Send to Vedran"
+            >
+              <span style={{ fontSize: "12px", fontWeight: "bold" }}>vedran</span>
+            </button>
+            
+            {/* Bruno */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+                
+                // Share overlay with Bruno
+                const shareWithUser = async () => {
+                  if (!id) return;
+                  
+                  try {
+                    // Get current overlay data
+                    const { data: overlayData, error: fetchError } = await supabase
+                      .from("overlays")
+                      .select("users")
+                      .eq("id", id)
+                      .single();
+                      
+                    if (fetchError) throw fetchError;
+                    
+                    // Add Bruno to users list with semicolon delimiter
+                    const currentUsers = overlayData?.users || "";
+                    const usersList = currentUsers.split(";").filter(user => user.trim() !== "");
+                    
+                    // Add Bruno if not already in the list
+                    if (!usersList.includes("bruno")) {
+                      usersList.push("bruno");
+                    }
+                    
+                    // Update the users field
+                    const updatedUsers = usersList.join(";");
+                    
+                    const { error } = await supabase
+                      .from("overlays")
+                      .update({ users: updatedUsers })
+                      .eq("id", id);
+                      
+                    if (error) throw error;
+                    
+                    console.log("Overlay shared with Bruno successfully");
+                  } catch (error) {
+                    console.error("Error sharing overlay with Bruno:", error);
+                  }
+                };
+                
+                shareWithUser();
+                setShowProfileIcons(false);
+              }}
+              style={{
+                backgroundColor: "#4ECDC4",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                width: "80px",
+                height: "30px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer"
+              }}
+              title="Send to Bruno"
+            >
+              <span style={{ fontSize: "12px", fontWeight: "bold" }}>bruno</span>
+            </button>
+            
+            {/* Marko */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+                
+                // Share overlay with Marko
+                const shareWithUser = async () => {
+                  if (!id) return;
+                  
+                  try {
+                    // Get current overlay data
+                    const { data: overlayData, error: fetchError } = await supabase
+                      .from("overlays")
+                      .select("users")
+                      .eq("id", id)
+                      .single();
+                      
+                    if (fetchError) throw fetchError;
+                    
+                    // Add Marko to users list with semicolon delimiter
+                    const currentUsers = overlayData?.users || "";
+                    const usersList = currentUsers.split(";").filter(user => user.trim() !== "");
+                    
+                    // Add Marko if not already in the list
+                    if (!usersList.includes("marko")) {
+                      usersList.push("marko");
+                    }
+                    
+                    // Update the users field
+                    const updatedUsers = usersList.join(";");
+                    
+                    const { error } = await supabase
+                      .from("overlays")
+                      .update({ users: updatedUsers })
+                      .eq("id", id);
+                      
+                    if (error) throw error;
+                    
+                    console.log("Overlay shared with Marko successfully");
+                  } catch (error) {
+                    console.error("Error sharing overlay with Marko:", error);
+                  }
+                };
+                
+                shareWithUser();
+                setShowProfileIcons(false);
+              }}
+              style={{
+                backgroundColor: "#FFD166",
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                width: "80px",
+                height: "30px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer"
+              }}
+              title="Send to Marko"
+            >
+              <span style={{ fontSize: "12px", fontWeight: "bold" }}>marko</span>
+            </button>
+          </div>
+        )}
+      </div>
+      
       {/* Content */}
-      <div style={{ marginTop: "20px" }}>
+      <div style={{ 
+        marginTop: "20px", 
+        width: "100%", 
+        height: "100%", 
+        overflow: "hidden", 
+        display: "flex", 
+        flexDirection: "column" 
+      }}>
         {children}
       </div>
     </div>
@@ -705,6 +1120,649 @@ const ChatAiOverlay: React.FC<any> = (props) => {
   );
 };
 
+// Add FormOverlay component after other overlay components
+const FormOverlay: React.FC<any> = (props) => {
+  const [formData, setFormData] = useState<Record<string, any>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Initialize form data with default values
+  useEffect(() => {
+    const initialData: Record<string, any> = {};
+    props.fields?.forEach((field: any) => {
+      if (field.defaultValue !== undefined) {
+        initialData[field.id] = field.defaultValue;
+      }
+    });
+    setFormData(initialData);
+  }, [props.fields]);
+
+  const validateForm = () => {
+    const errors: Record<string, string> = {};
+    let isValid = true;
+
+    props.fields?.forEach((field: any) => {
+      if (field.required && !formData[field.id]) {
+        errors[field.id] = `${field.label} is required`;
+        isValid = false;
+      }
+
+      if (field.type === "email" && formData[field.id]) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(formData[field.id])) {
+          errors[field.id] = "Please enter a valid email address";
+          isValid = false;
+        }
+      }
+
+      if (field.type === "number" && formData[field.id]) {
+        if (isNaN(Number(formData[field.id]))) {
+          errors[field.id] = "Please enter a valid number";
+          isValid = false;
+        }
+      }
+    });
+
+    setFormErrors(errors);
+    return isValid;
+  };
+
+  const handleInputChange = (fieldId: string, value: any) => {
+    setFormData((prev) => ({
+      ...prev,
+      [fieldId]: value
+    }));
+    
+    // Clear error for this field if it exists
+    if (formErrors[fieldId]) {
+      setFormErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[fieldId];
+        return newErrors;
+      });
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate form
+    if (!validateForm()) {
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
+    try {
+      // If there's a submission endpoint, send data there
+      if (props.submitEndpoint) {
+        const response = await fetch(props.submitEndpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(formData)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Submission failed: ${response.statusText}`);
+        }
+      }
+      
+      // Save form data to Supabase (associated with this overlay)
+      if (props.id) {
+        const { error } = await supabase
+          .from("form_submissions")
+          .insert({
+            overlay_id: props.id,
+            form_data: formData,
+            submitted_at: new Date().toISOString()
+          });
+          
+        if (error) {
+          throw error;
+        }
+      }
+      
+      // Show success message
+      setShowSuccess(true);
+      setTimeout(() => {
+        setShowSuccess(false);
+      }, 3000);
+      
+      // Reset form if needed
+      setFormData({});
+      
+    } catch (error) {
+      console.error("Error submitting form:", error);
+      alert("There was an error submitting the form. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const renderField = (field: any) => {
+    const fieldError = formErrors[field.id];
+    
+    switch (field.type) {
+      case "text":
+      case "email":
+      case "number":
+      case "password":
+        return (
+          <div key={field.id} className="space-y-2 mb-4">
+            <label 
+              htmlFor={field.id} 
+              className="text-sm font-medium"
+            >
+              {field.label} {field.required && <span className="text-red-500">*</span>}
+            </label>
+            <Input
+              id={field.id}
+              type={field.type}
+              value={formData[field.id] || ""}
+              onChange={(e) => handleInputChange(field.id, e.target.value)}
+              placeholder={field.placeholder || ""}
+              aria-invalid={!!fieldError}
+              className={fieldError ? "border-red-500" : ""}
+            />
+            {fieldError && (
+              <div className="text-red-500 text-xs mt-1">
+                {fieldError}
+              </div>
+            )}
+          </div>
+        );
+        
+      case "textarea":
+        return (
+          <div key={field.id} className="space-y-2 mb-4">
+            <label 
+              htmlFor={field.id} 
+              className="text-sm font-medium"
+            >
+              {field.label} {field.required && <span className="text-red-500">*</span>}
+            </label>
+            <textarea
+              id={field.id}
+              value={formData[field.id] || ""}
+              onChange={(e) => handleInputChange(field.id, e.target.value)}
+              placeholder={field.placeholder || ""}
+              rows={4}
+              className={`w-full min-h-[80px] rounded-md border ${fieldError ? "border-red-500" : "border-input"} bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50`}
+            />
+            {fieldError && (
+              <div className="text-red-500 text-xs mt-1">
+                {fieldError}
+              </div>
+            )}
+          </div>
+        );
+        
+      case "select":
+        return (
+          <div key={field.id} className="space-y-2 mb-4">
+            <label 
+              htmlFor={field.id} 
+              className="text-sm font-medium"
+            >
+              {field.label} {field.required && <span className="text-red-500">*</span>}
+            </label>
+            <select
+              id={field.id}
+              value={formData[field.id] || ""}
+              onChange={(e) => handleInputChange(field.id, e.target.value)}
+              className={`w-full h-9 rounded-md border ${fieldError ? "border-red-500" : "border-input"} bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              <option value="">Select an option</option>
+              {field.options?.map((option: any) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            {fieldError && (
+              <div className="text-red-500 text-xs mt-1">
+                {fieldError}
+              </div>
+            )}
+          </div>
+        );
+        
+      case "checkbox":
+        return (
+          <div key={field.id} className="mb-4">
+            <div className="flex items-center space-x-2">
+              <input
+                id={field.id}
+                type="checkbox"
+                checked={!!formData[field.id]}
+                onChange={(e) => handleInputChange(field.id, e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+              />
+              <label 
+                htmlFor={field.id} 
+                className="text-sm font-medium cursor-pointer"
+              >
+                {field.label} {field.required && <span className="text-red-500">*</span>}
+              </label>
+            </div>
+            {fieldError && (
+              <div className="text-red-500 text-xs mt-1 ml-6">
+                {fieldError}
+              </div>
+            )}
+          </div>
+        );
+        
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <BaseCustomOverlay {...props}>
+      <div className="p-4">
+        {props.title && (
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">
+            {props.title}
+          </h3>
+        )}
+        
+        {showSuccess ? (
+          <div className="p-4 bg-green-50 border border-green-200 text-green-800 rounded-md text-center mb-4">
+            {props.successMessage || "Form submitted successfully!"}
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-2">
+            {props.fields?.map(renderField)}
+            
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full mt-4"
+            >
+              {isSubmitting ? "Submitting..." : (props.submitButtonText || "Submit")}
+            </Button>
+          </form>
+        )}
+      </div>
+    </BaseCustomOverlay>
+  );
+};
+
+// Add GridOverlay component after the FormOverlay component
+const GridOverlay: React.FC<any> = (props) => {
+  console.log("GridOverlay props:", JSON.stringify(props, null, 2));
+  
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageSize, setPageSize] = useState(props.pagination?.pageSize || 10);
+  const [sortColumn, setSortColumn] = useState(props.sorting?.defaultSortColumn || "");
+  const [sortDirection, setSortDirection] = useState(props.sorting?.defaultSortDirection || "asc");
+  const [filterValue, setFilterValue] = useState("");
+  const [filteredData, setFilteredData] = useState([]);
+  const [error, setError] = useState<string | null>(null);
+
+  // Initialize data and check for issues
+  useEffect(() => {
+    try {
+      if (!props.data || !Array.isArray(props.data)) {
+        setError("Invalid or missing data array");
+        setFilteredData([]);
+        return;
+      }
+      
+      if (!props.columns || !Array.isArray(props.columns)) {
+        setError("Invalid or missing columns definition");
+        setFilteredData([]);
+        return;
+      }
+      
+      // Validate columns have required properties
+      const invalidColumns = props.columns.filter((col: any) => 
+        !col.id || !col.header || !col.accessor);
+      
+      if (invalidColumns.length > 0) {
+        setError(`Invalid column definition: ${JSON.stringify(invalidColumns)}`);
+        setFilteredData([]);
+        return;
+      }
+      
+      // Reset error state if no issues
+      setError(null);
+      setFilteredData(props.data);
+    } catch (err) {
+      console.error("Error initializing grid:", err);
+      setError(`Failed to initialize grid: ${err instanceof Error ? err.message : String(err)}`);
+      setFilteredData([]);
+    }
+  }, [props.data, props.columns]);
+
+  // Apply filtering
+  useEffect(() => {
+    if (!props.data || !Array.isArray(props.data) || error) return;
+    
+    try {
+      if (filterValue && props.filtering?.enabled) {
+        const lowercasedFilter = filterValue.toLowerCase();
+        const filtered = props.data.filter(row => {
+          return Object.entries(row).some(([key, value]) => {
+            // Check if this column is filterable
+            const column = props.columns.find((col: any) => col.accessor === key);
+            if (!column || column.filterable === false) return false;
+            
+            // Convert value to string and check if it contains the filter
+            const valueStr = String(value).toLowerCase();
+            return valueStr.includes(lowercasedFilter);
+          });
+        });
+        setFilteredData(filtered);
+      } else {
+        setFilteredData(props.data);
+      }
+    } catch (err) {
+      console.error("Error filtering data:", err);
+      setError(`Failed to filter data: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [filterValue, props.data, props.columns, props.filtering?.enabled, error]);
+
+  // Apply sorting
+  const sortedData = React.useMemo(() => {
+    if (!sortColumn || !props.sorting?.enabled || error || !Array.isArray(filteredData)) 
+      return filteredData;
+    
+    try {
+      return [...filteredData].sort((a, b) => {
+        if (a[sortColumn] === b[sortColumn]) return 0;
+        
+        const aValue = a[sortColumn];
+        const bValue = b[sortColumn];
+        
+        // Handle different types of values
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          return sortDirection === 'asc' 
+            ? aValue.localeCompare(bValue) 
+            : bValue.localeCompare(aValue);
+        }
+        
+        return sortDirection === 'asc' 
+          ? (aValue > bValue ? 1 : -1) 
+          : (aValue < bValue ? 1 : -1);
+      });
+    } catch (err) {
+      console.error("Error sorting data:", err);
+      return filteredData;
+    }
+  }, [filteredData, sortColumn, sortDirection, props.sorting?.enabled, error]);
+
+  // Get paginated data
+  const paginatedData = React.useMemo(() => {
+    if (!props.pagination?.enabled || error || !Array.isArray(sortedData)) 
+      return sortedData;
+    
+    try {
+      const start = currentPage * pageSize;
+      return sortedData.slice(start, start + pageSize);
+    } catch (err) {
+      console.error("Error paginating data:", err);
+      return sortedData;
+    }
+  }, [sortedData, currentPage, pageSize, props.pagination?.enabled, error]);
+
+  // Handle changing sort
+  const handleSort = (columnId: string) => {
+    if (!props.sorting?.enabled) return;
+    
+    // Check if column is sortable
+    const column = props.columns.find(col => col.id === columnId);
+    if (!column || column.sortable === false) return;
+    
+    // If clicking the same column, toggle direction
+    if (sortColumn === column.accessor) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Otherwise, sort by the new column in ascending order
+      setSortColumn(column.accessor);
+      setSortDirection('asc');
+    }
+  };
+
+  // Handle page change
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 0) return;
+    if (props.pagination?.enabled && newPage * pageSize >= filteredData.length) return;
+    setCurrentPage(newPage);
+  };
+
+  // Handle page size change
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(0); // Reset to first page when changing page size
+  };
+
+  // Render cell based on column type
+  const renderCell = (row: any, column: any) => {
+    try {
+      const value = row[column.accessor];
+      
+      switch (column.type) {
+        case 'boolean':
+          return value ? '✓' : '✗';
+          
+        case 'date':
+          return value ? new Date(value).toLocaleDateString() : '';
+          
+        case 'image':
+          return value ? (
+            <img 
+              src={value} 
+              alt="Cell content" 
+              style={{ width: '40px', height: '40px', objectFit: 'cover' }} 
+            />
+          ) : null;
+          
+        case 'actions':
+          return (
+            <div className="flex space-x-2">
+              {props.rowActions?.map((action: any, i: number) => {
+                // Use a fallback icon if the icon is missing or invalid
+                let icon = action.icon;
+                if (!icon || typeof icon !== 'string' || icon.length === 0 || icon.includes('')) {
+                  // Use appropriate fallback icons
+                  switch (action.label?.toLowerCase()) {
+                    case 'edit':
+                      icon = '✏️';
+                      break;
+                    case 'delete':
+                      icon = '🗑️';
+                      break;
+                    case 'view':
+                      icon = '👁️';
+                      break;
+                    default:
+                      icon = '⚙️'; // Generic action icon
+                  }
+                }
+                
+                return (
+                  <button 
+                    key={i}
+                    className="text-blue-500 hover:text-blue-700 p-1 rounded"
+                    onClick={() => console.log(`Action ${action.label} on row`, row)}
+                    title={action.label || `Action ${i+1}`}
+                  >
+                    {icon || action.label || `Action ${i+1}`}
+                  </button>
+                );
+              })}
+            </div>
+          );
+          
+        default:
+          return value !== undefined && value !== null ? String(value) : '';
+      }
+    } catch (err) {
+      console.error(`Error rendering cell for column ${column?.id}:`, err);
+      return '—'; // Em dash as fallback for error
+    }
+  };
+
+  // Calculate total pages
+  const totalPages = props.pagination?.enabled
+    ? Math.ceil(filteredData.length / pageSize)
+    : 1;
+
+  return (
+    <BaseCustomOverlay {...props}>
+      <div className="flex flex-col h-full max-h-full w-full">
+        {/* Display error if any */}
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded m-4">
+            <strong>Error:</strong> {error}
+          </div>
+        )}
+        
+        {/* Header with title and filter */}
+        <div className="flex justify-between items-center mb-2 p-4 flex-shrink-0">
+          {props.title && (
+            <h3 className="text-lg font-semibold text-gray-800">{props.title}</h3>
+          )}
+          
+          {props.filtering?.enabled && !error && (
+            <div className="w-64">
+              <Input
+                type="text"
+                placeholder={props.filtering.placeholder || "Search..."}
+                value={filterValue}
+                onChange={(e) => setFilterValue(e.target.value)}
+                className="w-full"
+              />
+            </div>
+          )}
+        </div>
+        
+        {/* Table - with both horizontal and vertical scrolling */}
+        {!error && (
+          <div className="overflow-auto flex-grow min-h-0 w-full relative" style={{ maxHeight: 'calc(100% - 20px)' }}>
+            <div className="inline-block min-w-full align-middle">
+              <table className="min-w-full divide-y divide-gray-200 table-fixed border-collapse">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {props.columns.map((column: any) => (
+                      <th
+                        key={column.id}
+                        scope="col"
+                        className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${props.sorting?.enabled && column.sortable !== false ? 'cursor-pointer select-none' : ''} sticky top-0 bg-gray-50 z-10`}
+                        style={{ 
+                          width: column.width || 'auto',
+                          minWidth: column.type === 'actions' ? '80px' : '100px'
+                        }}
+                        onClick={() => handleSort(column.id)}
+                      >
+                        <div className="flex items-center space-x-1">
+                          <span>{column.header}</span>
+                          {sortColumn === column.accessor && (
+                            <span>{sortDirection === 'asc' ? '▲' : '▼'}</span>
+                          )}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {paginatedData && Array.isArray(paginatedData) && paginatedData.length > 0 ? (
+                    paginatedData.map((row, rowIndex) => (
+                      <tr key={rowIndex} className="hover:bg-gray-50">
+                        {props.columns.map((column: any) => (
+                          <td key={column.id} className="px-6 py-4 overflow-hidden text-ellipsis">
+                            {renderCell(row, column)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td 
+                        colSpan={props.columns.length} 
+                        className="px-6 py-4 text-center text-sm text-gray-500"
+                      >
+                        No data available
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        
+        {/* Pagination */}
+        {props.pagination?.enabled && !error && (
+          <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-gray-200 sm:px-6 flex-shrink-0">
+            <div className="flex items-center">
+              <span className="text-sm text-gray-700 mr-2">
+                Rows per page:
+              </span>
+              <select
+                value={pageSize}
+                onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                {(props.pagination.pageSizeOptions || [10, 25, 50, 100]).map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="flex items-center">
+              <span className="text-sm text-gray-700 mr-4">
+                Page {currentPage + 1} of {totalPages}
+              </span>
+              <div className="flex space-x-2">
+                <Button
+                  onClick={() => handlePageChange(0)}
+                  disabled={currentPage === 0}
+                  variant="outline"
+                  size="sm"
+                >
+                  {"<<"}
+                </Button>
+                <Button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 0}
+                  variant="outline"
+                  size="sm"
+                >
+                  {"<"}
+                </Button>
+                <Button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages - 1}
+                  variant="outline"
+                  size="sm"
+                >
+                  {">"}
+                </Button>
+                <Button
+                  onClick={() => handlePageChange(totalPages - 1)}
+                  disabled={currentPage === totalPages - 1}
+                  variant="outline"
+                  size="sm"
+                >
+                  {">>"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </BaseCustomOverlay>
+  );
+};
+
 // Accept both the new strongly typed layout and the legacy format
 interface OverlayFactoryProps {
   overlay: {
@@ -767,7 +1825,7 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
             style={buttonLayout.style}
             label={buttonLayout.label}
             action={buttonLayout.action}
-            color={buttonLayout.color}
+            // color={buttonLayout.color}
             icon={buttonLayout.icon}
             url={buttonLayout.url}
             zIndex={9999999 + id}
@@ -803,6 +1861,54 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
             target={searchLayout.target}
             suggestions={searchLayout.suggestions}
             url={searchLayout.url}
+            zIndex={9999999 + id}
+            onDelete={() => onDelete && onDelete(id)}
+            onPin={(isPinned) => onPin && onPin(id, isPinned)}
+          />
+        );
+        
+      case "form":
+        const formLayout = layout as FormLayout;
+        return (
+          <FormOverlay
+            id={id}
+            style={formLayout.style}
+            title={formLayout.title}
+            fields={formLayout.fields}
+            submitButtonText={formLayout.submitButtonText}
+            submitEndpoint={formLayout.submitEndpoint}
+            successMessage={formLayout.successMessage}
+            url={formLayout.url}
+            zIndex={9999999 + id}
+            onDelete={() => onDelete && onDelete(id)}
+            onPin={(isPinned) => onPin && onPin(id, isPinned)}
+          />
+        );
+        
+      case "grid":
+        const gridLayout = layout as GridLayout;
+        // Ensure we have proper height and width
+        if (gridLayout.style) {
+          // Set reasonable defaults if not provided
+          if (!gridLayout.style.width) gridLayout.style.width = 650;
+          if (!gridLayout.style.height) gridLayout.style.height = 400;
+          
+          // Make sure padding is set to 0 for grids to maximize space
+          gridLayout.style.padding = 0;
+        }
+        
+        return (
+          <GridOverlay
+            id={id}
+            style={gridLayout.style}
+            title={gridLayout.title}
+            columns={gridLayout.columns}
+            data={gridLayout.data}
+            pagination={gridLayout.pagination}
+            sorting={gridLayout.sorting}
+            filtering={gridLayout.filtering}
+            rowActions={gridLayout.rowActions}
+            url={gridLayout.url}
             zIndex={9999999 + id}
             onDelete={() => onDelete && onDelete(id)}
             onPin={(isPinned) => onPin && onPin(id, isPinned)}

@@ -5,6 +5,19 @@ const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
+// Helper function to get username from background script
+export const getUsernameFromBackground = (): Promise<string> => {
+  return new Promise<string>((resolve) => {
+    chrome.runtime.sendMessage({ action: "get_username" }, (response) => {
+      if (response && response.username) {
+        resolve(response.username);
+      } else {
+        resolve("anonymous");
+      }
+    });
+  });
+};
+
 // Define common interface for all overlay types
 export interface BaseLayoutProps {
   style: {
@@ -54,6 +67,60 @@ export interface SearchLayout extends BaseLayoutProps {
   suggestions?: string[];
 }
 
+// Form overlay
+export interface FormLayout extends BaseLayoutProps {
+  type: "form";
+  title?: string;
+  fields: Array<{
+    id: string;
+    type: "text" | "email" | "number" | "textarea" | "select" | "checkbox" | "password";
+    label: string;
+    placeholder?: string;
+    required?: boolean;
+    options?: Array<{value: string, label: string}>; // For select fields
+    defaultValue?: string | number | boolean;
+  }>;
+  submitButtonText?: string;
+  onSubmitAction?: string; // Action to perform on submission
+  submitEndpoint?: string; // URL to send data to
+  successMessage?: string;
+}
+
+// Grid overlay
+export interface GridLayout extends BaseLayoutProps {
+  type: "grid";
+  title?: string;
+  columns: Array<{
+    id: string;
+    header: string;
+    accessor: string;
+    type?: "text" | "number" | "date" | "boolean" | "image" | "actions";
+    sortable?: boolean;
+    filterable?: boolean;
+    width?: number | string;
+  }>;
+  data: Array<Record<string, any>>; // Rows of data
+  pagination?: {
+    enabled: boolean;
+    pageSize?: number;
+    pageSizeOptions?: number[];
+  };
+  sorting?: {
+    enabled: boolean;
+    defaultSortColumn?: string;
+    defaultSortDirection?: "asc" | "desc";
+  };
+  filtering?: {
+    enabled: boolean;
+    placeholder?: string;
+  };
+  rowActions?: Array<{
+    label: string;
+    icon?: string;
+    action: string;
+  }>;
+}
+
 // Chat AI overlay
 export interface ChatAiLayout extends BaseLayoutProps {
   type: "chatai";
@@ -81,6 +148,8 @@ export type OverlayLayout =
   | TimerLayout 
   | SearchLayout 
   | ChatAiLayout
+  | FormLayout
+  | GridLayout
   | CustomLayout;
 
 export interface OverlayData {
@@ -88,6 +157,56 @@ export interface OverlayData {
   name: string;
   path?: string;
   layout?: OverlayLayout;
+}
+
+/**
+ * Creates a new overlay in the database with the given layout and username
+ * @param name The name of the overlay
+ * @param layout The layout object containing style and content
+ * @param username The username to associate with the overlay
+ * @returns The created overlay data or null if an error occurred
+ */
+export async function createOverlayWithUsername(name: string, layout: OverlayLayout, username: string) {
+  try {
+    const overlayData = {
+      name,
+      layout,
+      users: username
+    };
+
+    const { data, error } = await supabase
+      .from("overlays")
+      .insert(overlayData)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating overlay with username:", error);
+      return null;
+    }
+
+    return data;
+  } catch (e) {
+    console.error("Exception creating overlay with username:", e);
+    return null;
+  }
+}
+
+/**
+ * Creates a new overlay with the current username from background script
+ * @param name The name of the overlay
+ * @param layout The layout object containing style and content
+ * @returns The created overlay data or null if an error occurred
+ */
+export async function createOverlayWithCurrentUsername(name: string, layout: OverlayLayout) {
+  try {
+    // Get current username from background script
+    const currentUsername = await getUsernameFromBackground();
+    return createOverlayWithUsername(name, layout, currentUsername);
+  } catch (e) {
+    console.error("Exception creating overlay with current username:", e);
+    return null;
+  }
 }
 
 /**

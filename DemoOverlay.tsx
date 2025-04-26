@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react"
-import { createOverlay, fetchOverlays, subscribeToOverlays } from "./utils/createOverlay"
+import { createOverlayWithCurrentUsername, fetchOverlays, subscribeToOverlays } from "./utils/createOverlay"
 import type { OverlayData } from "./utils/createOverlay"
 import { createOverlayElement } from "./DynamicOverlay"
 
 // Example overlay configuration
 const exampleOverlay = {
+  type: "note",
   style: {
     top: 150,
     left: 300,
@@ -77,7 +78,7 @@ const DemoOverlay = () => {
   const saveToDatabase = async () => {
     setStatus("Saving to database...")
     try {
-      const result = await createOverlay("Hello World Overlay", exampleOverlay)
+      const result = await createOverlayWithCurrentUsername("Hello World Overlay", exampleOverlay)
       setStatus(result ? "Saved successfully!" : "Error saving overlay")
     } catch (e) {
       console.error("Error saving overlay:", e)
