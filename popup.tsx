@@ -1,5 +1,7 @@
 import { useState } from "react"
 
+import "./global.css"
+
 function IndexPopup() {
   const [data, setData] = useState("")
 
@@ -16,9 +18,9 @@ function IndexPopup() {
       }}>
       <h2>Overlay Extension</h2>
       <p>Create and manage custom overlays for any website.</p>
-      
+
       <div style={{ marginTop: 20 }}>
-        <button 
+        <button
           onClick={openOverlayManager}
           style={{
             padding: "8px 16px",
@@ -28,19 +30,17 @@ function IndexPopup() {
             borderRadius: 4,
             cursor: "pointer",
             fontWeight: "bold"
-          }}
-        >
+          }}>
           Open Overlay Manager
         </button>
       </div>
-      
+
       <div style={{ marginTop: 20, fontSize: 14 }}>
         <p>Active overlays will display automatically on websites.</p>
-        <a 
-          href="https://docs.plasmo.com" 
+        <a
+          href="https://docs.plasmo.com"
           target="_blank"
-          style={{ color: "#4285F4", textDecoration: "none" }}
-        >
+          style={{ color: "#4285F4", textDecoration: "none" }}>
           View Docs
         </a>
       </div>
