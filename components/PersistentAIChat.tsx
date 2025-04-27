@@ -22,6 +22,19 @@ const OVERLAY_FORMAT_PROMPT = `
 I need responses in a specific JSON format that can be used as overlays in my application.
 Each response should follow one of these formats:
 
+when i start with /translate always use translate overlay format
+when i start with /explain always use explain overlay format
+when i start with /chat always use chat overlay format
+when i start with /timer always use timer overlay format
+when i start with /search always use search overlay format
+when i start with /form always use form overlay format
+when i start with /grid always use grid overlay format
+when i start with /approval always use approval overlay format
+when i start with /poll always use poll overlay format
+when i start with /note always use note overlay format  -> try to sumarise wverything from context added
+when i start with /button always use button overlay format
+
+
 1. For a simple note:
 {
   "type": "note",
@@ -72,6 +85,7 @@ Each response should follow one of these formats:
   "target": "example.com"
 }
 
+// is user asking about /email to send then use this format -> one biger input with text user provided and send input on top of this with user provided and on end put send button
 5. For a form element (with multiple fields):
 {
   "type": "form",
@@ -378,6 +392,26 @@ const PersistentAIChat: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   
+  // Command autocomplete states
+  const [showCommands, setShowCommands] = useState(false);
+  const [filteredCommands, setFilteredCommands] = useState<string[]>([]);
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
+  
+  // Available commands
+  const availableCommands = [
+    '/translate',
+    '/explain',
+    '/note',
+    '/button',
+    '/timer',
+    '/search',
+    '/form',
+    '/grid',
+    '/approval',
+    '/poll',
+    '/email'
+  ];
+  
   // Context panel states
   const [isContextPanelOpen, setIsContextPanelOpen] = useState(false);
   const [contextPanelVisible, setContextPanelVisible] = useState(false);
@@ -404,6 +438,66 @@ const PersistentAIChat: React.FC = () => {
       ]);
     }
   }, []);
+
+  // Handle input change for command autocomplete
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setInput(value);
+    
+    // Check if the input starts with '/' to show commands
+    if (value.startsWith('/')) {
+      // Get the command part (after the slash)
+      const command = value.substring(1).toLowerCase();
+      
+      // Filter available commands that match what the user is typing
+      const filtered = availableCommands.filter(cmd => 
+        cmd.toLowerCase().substring(1).startsWith(command)
+      );
+      
+      setFilteredCommands(filtered);
+      setShowCommands(filtered.length > 0);
+      setSelectedCommandIndex(0);
+    } else {
+      setShowCommands(false);
+    }
+  };
+  
+  // Handle keyboard navigation for command autocomplete
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (showCommands) {
+      // Handle arrow up/down for navigation
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedCommandIndex(prev => 
+          prev < filteredCommands.length - 1 ? prev + 1 : prev
+        );
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedCommandIndex(prev => prev > 0 ? prev - 1 : 0);
+      }
+      // Handle tab or enter to select the command
+      else if (e.key === 'Tab' || e.key === 'Enter') {
+        if (filteredCommands.length > 0) {
+          e.preventDefault();
+          selectCommand(filteredCommands[selectedCommandIndex]);
+        }
+      }
+      // Close commands on escape
+      else if (e.key === 'Escape') {
+        setShowCommands(false);
+      }
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+  
+  // Select a command from the dropdown
+  const selectCommand = (command: string) => {
+    setInput(command + ' ');
+    setShowCommands(false);
+    inputRef.current?.focus();
+  };
 
   // Animation for the floating button
   useEffect(() => {
@@ -1337,21 +1431,22 @@ const PersistentAIChat: React.FC = () => {
             )}
           </div>
 
-          {/* Input area */}
+          {/* Input area with command autocomplete */}
           <div style={{ 
             padding: "10px",
             display: "flex",
             gap: "8px",
             backgroundColor: "white",
             alignItems: "center",
-            borderTop: "1px solid #f0f0f0"
+            borderTop: "1px solid #f0f0f0",
+            position: "relative"  // Add this for absolute positioning of the dropdown
           }}>
             <input
               ref={inputRef}
               type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
+              onChange={handleInputChange}
+              onKeyDown={handleInputKeyDown}
               placeholder="Ask for help or create an overlay..."
               disabled={isLoading}
               style={{
@@ -1364,6 +1459,55 @@ const PersistentAIChat: React.FC = () => {
                 backgroundColor: "#f9f9f9"
               }}
             />
+            
+            {/* Command autocomplete dropdown */}
+            {showCommands && (
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: "60px",
+                  left: "10px",
+                  width: "calc(100% - 20px)",
+                  maxHeight: "200px",
+                  overflowY: "auto",
+                  backgroundColor: "white",
+                  borderRadius: "8px",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                  zIndex: 1000,
+                  border: "1px solid #eee"
+                }}
+              >
+                {filteredCommands.map((command, index) => (
+                  <div
+                    key={command}
+                    onClick={() => selectCommand(command)}
+                    style={{
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      backgroundColor: index === selectedCommandIndex ? "#f0f0f0" : "transparent",
+                      borderBottom: index === filteredCommands.length - 1 ? "none" : "1px solid #f5f5f5",
+                      fontSize: "14px"
+                    }}
+                  >
+                    <span style={{ fontWeight: "bold", color: "#2684FF" }}>{command}</span>
+                    <span style={{ fontSize: "12px", color: "#888", marginLeft: "8px" }}>
+                      {command === '/translate' && "Create a translation overlay"}
+                      {command === '/explain' && "Create an explain like I'm 5 overlay"}
+                      {command === '/note' && "Create a simple note overlay"}
+                      {command === '/button' && "Create a button overlay"}
+                      {command === '/timer' && "Create a timer overlay"}
+                      {command === '/search' && "Create a search overlay"}
+                      {command === '/form' && "Create a form overlay"}
+                      {command === '/grid' && "Create a data grid overlay"}
+                      {command === '/approval' && "Create an approval overlay"}
+                      {command === '/poll' && "Create a poll overlay"}
+                      {command === '/email' && "Create an email overlay"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            
             {contextItems.filter(item => item.active).length > 0 && (
               <div 
                 title={`${contextItems.filter(item => item.active).length} active context items will be included`}

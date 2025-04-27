@@ -295,7 +295,7 @@ const OverlayRoot = () => {
       </div>
       
       {/* Add the floating button for creating new notes */}
-      {/* <FloatingButton /> */}
+      <FloatingButton />
 
       {/* <OverlayTopLeft />
       <OverlayTopRight />

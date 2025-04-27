@@ -566,6 +566,71 @@ const BaseCustomOverlay: React.FC<any> = ({
             zIndex: 2,
             width: "96px" // Make container a bit wider to fit buttons
           }}>
+            {/* Share with All Team */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+                
+                // Share overlay with all team members
+                const shareWithAllUsers = async () => {
+                  if (!id) return;
+                  
+                  try {
+                    // Get current overlay data
+                    const { data: overlayData, error: fetchError } = await supabase
+                      .from("overlays")
+                      .select("users")
+                      .eq("id", id)
+                      .single();
+                      
+                    if (fetchError) throw fetchError;
+                    
+                    // Add all team members to users list
+                    const currentUsers = overlayData?.users || "";
+                    const usersList = currentUsers.split(";").filter(user => user.trim() !== "");
+                    
+                    // Add all users if not already in the list
+                    if (!usersList.includes("vedran")) usersList.push("vedran");
+                    if (!usersList.includes("bruno")) usersList.push("bruno");
+                    if (!usersList.includes("marko")) usersList.push("marko");
+                    
+                    // Update the users field
+                    const updatedUsers = usersList.join(";");
+                    
+                    const { error } = await supabase
+                      .from("overlays")
+                      .update({ users: updatedUsers })
+                      .eq("id", id);
+                      
+                    if (error) throw error;
+                    
+                    console.log("Overlay shared with all team members successfully");
+                  } catch (error) {
+                    console.error("Error sharing overlay with team:", error);
+                  }
+                };
+                
+                shareWithAllUsers();
+                setShowProfileIcons(false);
+              }}
+              style={{
+                backgroundColor: "#8754D6", // Purple color to differentiate from individual shares
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                width: "80px",
+                height: "30px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer"
+              }}
+              title="Share with all team members"
+            >
+              <span style={{ fontSize: "12px", fontWeight: "bold" }}>All Team</span>
+            </button>
+            
             {/* Vedran */}
             <button
               onClick={(e) => {
@@ -800,29 +865,195 @@ const ButtonOverlay: React.FC<any> = (props) => (
   </BaseCustomOverlay>
 );
 
-const TimerOverlay: React.FC<any> = (props) => (
-  <BaseCustomOverlay {...props}>
-    <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: "24px", fontWeight: "bold" }}>
-        {Math.floor(props.duration / 60)}:{(props.duration % 60).toString().padStart(2, '0')}
+const TimerOverlay: React.FC<any> = (props) => {
+  const [timeLeft, setTimeLeft] = useState(props.duration || 300);
+  const [isRunning, setIsRunning] = useState(props.autoStart || false);
+  const [intervalId, setIntervalId] = useState<NodeJS.Timeout | null>(null);
+
+  // Format time as mm:ss
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Start the timer
+  const startTimer = () => {
+    if (isRunning) return;
+    
+    setIsRunning(true);
+    const id = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          // Timer complete
+          if (intervalId) clearInterval(intervalId);
+          setIsRunning(false);
+          
+          // Call onComplete if provided
+          if (props.onComplete) {
+            console.log("Timer complete, executing:", props.onComplete);
+          }
+          
+          // Save to database if ID provided
+          if (props.id) {
+            saveTimerStateToDatabase(0, false);
+          }
+          
+          return 0;
+        }
+        
+        // Save to database periodically (every 5 seconds)
+        if (prev % 5 === 0 && props.id) {
+          saveTimerStateToDatabase(prev - 1, true);
+        }
+        
+        return prev - 1;
+      });
+    }, 1000);
+    
+    setIntervalId(id);
+  };
+
+  // Pause the timer
+  const pauseTimer = () => {
+    if (!isRunning) return;
+    
+    if (intervalId) {
+      clearInterval(intervalId);
+      setIntervalId(null);
+    }
+    setIsRunning(false);
+    
+    // Save state to database if ID provided
+    if (props.id) {
+      saveTimerStateToDatabase(timeLeft, false);
+    }
+  };
+
+  // Reset the timer
+  const resetTimer = () => {
+    if (intervalId) {
+      clearInterval(intervalId);
+      setIntervalId(null);
+    }
+    setIsRunning(false);
+    setTimeLeft(props.duration || 300);
+    
+    // Save state to database if ID provided
+    if (props.id) {
+      saveTimerStateToDatabase(props.duration || 300, false);
+    }
+  };
+
+  // Save timer state to database
+  const saveTimerStateToDatabase = async (time: number, running: boolean) => {
+    if (!props.id) return;
+    
+    try {
+      // First fetch the current data
+      const { data: currentData, error: fetchError } = await supabase
+        .from("overlays")
+        .select("layout")
+        .eq("id", props.id)
+        .single();
+      
+      if (fetchError) throw fetchError;
+      
+      // Create updated layout with new state
+      const updatedLayout = {
+        ...(currentData?.layout || {}),
+        duration: time,
+        autoStart: running
+      };
+      
+      // Update in database
+      const { error } = await supabase
+        .from("overlays")
+        .update({ layout: updatedLayout })
+        .eq("id", props.id);
+      
+      if (error) throw error;
+      
+      console.log("Timer state saved successfully");
+    } catch (error) {
+      console.error("Error saving timer state:", error);
+    }
+  };
+
+  // Start timer automatically if autoStart is true
+  useEffect(() => {
+    if (props.autoStart) {
+      startTimer();
+    }
+    
+    // Clean up the interval when component unmounts
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, []);
+
+  return (
+    <BaseCustomOverlay {...props}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: "48px", fontWeight: "bold", margin: "16px 0" }}>
+          {formatTime(timeLeft)}
+        </div>
+        <div style={{ display: "flex", justifyContent: "center", gap: "8px" }}>
+          {!isRunning ? (
+            <button 
+              onClick={startTimer}
+              style={{ 
+                backgroundColor: "#4285F4", 
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                padding: "8px 16px",
+                cursor: "pointer",
+                fontSize: "14px"
+              }}
+            >
+              {timeLeft === props.duration ? "Start" : "Resume"}
+            </button>
+          ) : (
+            <button 
+              onClick={pauseTimer}
+              style={{ 
+                backgroundColor: "#EA4335", 
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                padding: "8px 16px",
+                cursor: "pointer",
+                fontSize: "14px"
+              }}
+            >
+              Pause
+            </button>
+          )}
+          
+          {timeLeft !== props.duration && (
+            <button 
+              onClick={resetTimer}
+              style={{ 
+                backgroundColor: "#FBBC05", 
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                padding: "8px 16px",
+                cursor: "pointer",
+                fontSize: "14px"
+              }}
+            >
+              Reset
+            </button>
+          )}
+        </div>
       </div>
-      <div style={{ marginTop: "8px" }}>
-        <button 
-          style={{ 
-            backgroundColor: "#4285F4", 
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            padding: "4px 12px",
-            cursor: "pointer"
-          }}
-        >
-          Start
-        </button>
-      </div>
-    </div>
-  </BaseCustomOverlay>
-);
+    </BaseCustomOverlay>
+  );
+};
 
 const SearchOverlay: React.FC<any> = (props) => (
   <BaseCustomOverlay {...props}>
@@ -2171,723 +2402,439 @@ const PollOverlay: React.FC<any> = (props) => {
 };
 
 // New Translation Overlay component
-const TranslationOverlay: React.FC<any> = (props) => {
-  // Safely access properties with default values
-  const layout = props.layout || {};
-  const style = layout.style || {};
-  
-  const [sourceText, setSourceText] = useState(layout.sourceText || '');
-  const [translatedText, setTranslatedText] = useState(layout.translatedText || '');
-  const [sourceLang, setSourceLang] = useState(layout.sourceLang || 'auto');
-  const [targetLang, setTargetLang] = useState(layout.targetLang || 'en');
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [history, setHistory] = useState<Array<any>>(layout.history || []);
-  const [showHistory, setShowHistory] = useState(false);
-  const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
-  const [translationSource, setTranslationSource] = useState<'ai' | 'mock'>('ai');
-  
-  // List of common languages
-  const languages = [
-    { code: 'auto', name: 'Auto Detect' },
-    { code: 'en', name: 'English' },
-    { code: 'hr', name: 'Croatian' },
-    { code: 'es', name: 'Spanish' },
-    { code: 'fr', name: 'French' },
-    { code: 'de', name: 'German' },
-    { code: 'it', name: 'Italian' },
-    { code: 'ja', name: 'Japanese' },
-    { code: 'ko', name: 'Korean' },
-    { code: 'pt', name: 'Portuguese' },
-    { code: 'ru', name: 'Russian' },
-    { code: 'zh-CN', name: 'Chinese (Simplified)' }
-  ];
-  
-  // Translate text using API
-  const translateText = async () => {
-    if (!sourceText.trim() || isTranslating) return;
-    
-    setIsTranslating(true);
-    setDetectedLanguage(null);
-    
-    try {
-      // Get OpenAI API key
-      const apiKey = layout.apiKey || getOpenAIApiKey();
-      
-      if (!apiKey) {
-        throw new Error("OpenAI API key is required for AI translation");
-      }
-      
-      let result = "";
-      setTranslationSource('ai');
-      
-      // Use OpenAI for translation
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: "gpt-3.5-turbo",
-          messages: [
-            {
-              role: "system",
-              content: `You are a translation assistant. Translate the following text from ${
-                sourceLang === 'auto' ? 'the detected language' : languages.find(l => l.code === sourceLang)?.name || sourceLang
-              } to ${
-                languages.find(l => l.code === targetLang)?.name || targetLang
-              }. 
-              
-              ${sourceLang === 'auto' ? 'Also detect the source language and include it in your response in the format: "[DETECTED:language_code]translated text".' : 'Provide only the translated text with no explanations or additional content.'}`
-            },
-            {
-              role: "user", 
-              content: sourceText
-            }
-          ],
-          temperature: 0.3
-        })
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || "Error calling OpenAI API");
-      }
-      
-      const data = await response.json();
-      result = data.choices[0].message.content.trim();
-      
-      // Check if we have language detection info
-      if (sourceLang === 'auto' && result.includes('[DETECTED:')) {
-        const detectionMatch = result.match(/\[DETECTED:(\w{2}(?:-\w{2})?)\](.*)/s);
-        if (detectionMatch) {
-          const detected = detectionMatch[1];
-          result = detectionMatch[2].trim();
-          setDetectedLanguage(detected);
-        }
-      }
-      
-      setTranslatedText(result);
-      
-      // Add to history
-      const newHistoryItem = {
-        sourceText,
-        translatedText: result,
-        sourceLang: detectedLanguage || sourceLang,
-        targetLang,
-        timestamp: Date.now()
-      };
-      
-      const updatedHistory = [newHistoryItem, ...history].slice(0, 10); // Keep only the last 10 translations
-      setHistory(updatedHistory);
-      
-      // Save to database if we have an ID
-      if (props.id) {
-        try {
-          // Get current data first
-          const { data: currentData, error: fetchError } = await supabase
-            .from("overlays")
-            .select("layout")
-            .eq("id", props.id)
-            .single();
-          
-          if (fetchError) throw fetchError;
-          
-          // Update the layout with new translation and history
-          const updatedLayout = {
-            ...(currentData?.layout || {}),
-            sourceText,
-            translatedText: result,
-            sourceLang: detectedLanguage || sourceLang,
-            targetLang,
-            history: updatedHistory
-          };
-          
-          // Save to database
-          const { error } = await supabase
-            .from("overlays")
-            .update({ layout: updatedLayout })
-            .eq("id", props.id);
-          
-          if (error) throw error;
-        } catch (error) {
-          console.error("Error saving translation:", error);
-        }
-      }
-    } catch (error) {
-      console.error("Translation error:", error);
-      
-      // Fall back to mock translation if OpenAI fails
-      try {
-        setTranslationSource('mock');
-        // Simple simulation as fallback
-        const mockResult = `[${sourceText}] translated from ${sourceLang} to ${targetLang}`;
-        setTranslatedText(mockResult);
-      } catch (mockError) {
-        setTranslatedText(`Error: ${error.message || "Error translating text"}`);
-      }
-    } finally {
-      setIsTranslating(false);
-    }
-  };
-  
-  // Switch languages
-  const switchLanguages = () => {
-    // Don't switch if source is auto-detect
-    if (sourceLang === 'auto') return;
-    
-    const tempLang = sourceLang;
-    setSourceLang(targetLang);
-    setTargetLang(tempLang);
-    
-    // If we have a translated text, swap it with source
-    if (translatedText) {
-      setSourceText(translatedText);
-      setTranslatedText(sourceText);
-    }
-  };
-  
-  // Clear fields
-  const clearFields = () => {
-    setSourceText('');
-    setTranslatedText('');
-    setDetectedLanguage(null);
-  };
-  
-  return (
-    <BaseCustomOverlay {...props} style={style}>
-      <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
-        <div style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "12px",
-          borderBottom: "1px solid #eee",
-          paddingBottom: "8px"
-        }}>
-          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>
-            Translation 
-            {translationSource === 'ai' && 
-              <span style={{ 
-                fontSize: "12px", 
-                fontWeight: "normal", 
-                backgroundColor: "#e9f5ff", 
-                color: "#0066cc",
-                padding: "2px 6px",
-                borderRadius: "10px",
-                marginLeft: "8px"
-              }}>
-                AI Powered
-              </span>
-            }
-          </h3>
-          
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button 
-              onClick={() => setShowHistory(!showHistory)}
-              style={{
-                background: "none",
-                border: "1px solid #ddd",
-                borderRadius: "4px",
-                padding: "4px 8px",
-                cursor: "pointer",
-                fontSize: "12px"
-              }}
-            >
-              {showHistory ? "Hide History" : "Show History"}
-            </button>
-            
-            <button 
-              onClick={clearFields}
-              style={{
-                background: "none",
-                border: "1px solid #ddd",
-                borderRadius: "4px",
-                padding: "4px 8px",
-                cursor: "pointer",
-                fontSize: "12px"
-              }}
-            >
-              Clear
-            </button>
-          </div>
+const TranslationOverlay: React.FC<any> = (props) => (
+  <BaseCustomOverlay {...props}>
+    <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        marginBottom: "12px"
+      }}>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            onClick={() => props.onToggleHistory?.()}
+            style={{
+              backgroundColor: props.showHistory ? "#4CAF50" : "#f0f0f0",
+              color: props.showHistory ? "white" : "#333",
+              border: "none",
+              borderRadius: "4px",
+              padding: "6px 10px",
+              fontSize: "13px",
+              cursor: "pointer"
+            }}
+          >
+            {props.showHistory ? "Hide History" : "Show History"}
+          </button>
+          <button
+            onClick={() => props.onClearFields?.()}
+            style={{
+              backgroundColor: "#f0f0f0",
+              color: "#333",
+              border: "none",
+              borderRadius: "4px",
+              padding: "6px 10px",
+              fontSize: "13px",
+              cursor: "pointer"
+            }}
+          >
+            Clear
+          </button>
         </div>
-        
-        {showHistory && history.length > 0 && (
-          <div style={{
-            marginBottom: "16px",
-            maxHeight: "150px",
-            overflowY: "auto",
-            border: "1px solid #eee",
-            borderRadius: "4px",
-            padding: "8px"
-          }}>
-            <h4 style={{ margin: "0 0 8px", fontSize: "14px", fontWeight: 600 }}>Recent Translations</h4>
-            
-            {history.map((item, index) => (
-              <div 
-                key={index}
-                style={{
-                  padding: "8px",
-                  borderBottom: index < history.length - 1 ? "1px solid #eee" : "none",
-                  fontSize: "13px",
-                  cursor: "pointer"
-                }}
-                onClick={() => {
-                  setSourceText(item.sourceText);
-                  setTranslatedText(item.translatedText);
-                  setSourceLang(item.sourceLang);
-                  setTargetLang(item.targetLang);
-                }}
-              >
-                <div style={{ fontWeight: 500 }}>{item.sourceText}</div>
-                <div style={{ color: "#666" }}>{item.translatedText}</div>
-                <div style={{ fontSize: "11px", color: "#999", marginTop: "4px" }}>
-                  {languages.find(l => l.code === item.sourceLang)?.name || item.sourceLang} → 
-                  {languages.find(l => l.code === item.targetLang)?.name || item.targetLang}
-                </div>
-              </div>
-            ))}
+        {props.translationSource === "ai" && (
+          <div
+            style={{
+              backgroundColor: "#E1F5FE",
+              color: "#0277BD",
+              padding: "4px 8px",
+              borderRadius: "4px",
+              fontSize: "12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px"
+            }}
+          >
+            <div style={{ fontWeight: "bold" }}>AI Powered</div>
           </div>
         )}
-        
-        <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-          <select
-            value={sourceLang}
-            onChange={(e) => {
-              setSourceLang(e.target.value);
-              setDetectedLanguage(null);
-            }}
-            style={{
-              flex: 1,
-              padding: "8px",
-              borderRadius: "4px",
-              border: "1px solid #ddd"
-            }}
-          >
-            {languages.map(lang => (
-              <option key={lang.code} value={lang.code}>{lang.name}</option>
-            ))}
-          </select>
-          
-          <button
-            onClick={switchLanguages}
-            disabled={sourceLang === 'auto'}
-            style={{
-              background: "none",
-              border: "1px solid #ddd",
-              borderRadius: "4px",
-              padding: "0 8px",
-              cursor: sourceLang === 'auto' ? "not-allowed" : "pointer",
-              opacity: sourceLang === 'auto' ? 0.5 : 1
-            }}
-            title={sourceLang === 'auto' ? "Can't switch when source language is Auto Detect" : "Switch languages"}
-          >
-            ⇄
-          </button>
-          
-          <select
-            value={targetLang}
-            onChange={(e) => setTargetLang(e.target.value)}
-            style={{
-              flex: 1,
-              padding: "8px",
-              borderRadius: "4px",
-              border: "1px solid #ddd"
-            }}
-          >
-            {languages.filter(lang => lang.code !== 'auto').map(lang => (
-              <option key={lang.code} value={lang.code}>{lang.name}</option>
-            ))}
-          </select>
-        </div>
-        
-        <textarea
-          value={sourceText}
-          onChange={(e) => setSourceText(e.target.value)}
-          placeholder="Enter text to translate"
+      </div>
+
+      {/* Source and target language selection */}
+      <div style={{
+        display: "flex",
+        gap: "10px",
+        marginBottom: "10px"
+      }}>
+        <select
+          value={props.sourceLang}
+          onChange={(e) => props.onSourceLangChange?.(e.target.value)}
           style={{
-            width: "100%",
-            height: "80px",
+            flex: 1,
             padding: "8px",
             borderRadius: "4px",
-            border: "1px solid #ddd",
-            resize: "none",
-            marginBottom: "12px"
+            border: "1px solid #ddd"
           }}
-        />
+        >
+          <option value="auto">Auto Detect</option>
+          <option value="en">English</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="it">Italian</option>
+          <option value="pt">Portuguese</option>
+          <option value="ru">Russian</option>
+          <option value="zh">Chinese</option>
+          <option value="ja">Japanese</option>
+          <option value="ko">Korean</option>
+          <option value="ar">Arabic</option>
+          <option value="hi">Hindi</option>
+          <option value="hr">Croatian</option>
+        </select>
         
         <button
-          onClick={translateText}
-          disabled={!sourceText.trim() || isTranslating}
+          onClick={() => props.onSwitchLanguages?.()}
           style={{
-            padding: "8px 16px",
-            backgroundColor: "#2196F3",
-            color: "white",
+            backgroundColor: "#f0f0f0",
             border: "none",
             borderRadius: "4px",
-            cursor: !sourceText.trim() || isTranslating ? "not-allowed" : "pointer",
-            opacity: !sourceText.trim() || isTranslating ? 0.7 : 1,
-            marginBottom: "12px",
+            width: "30px",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            gap: "8px"
+            cursor: "pointer"
           }}
         >
-          {isTranslating ? (
-            <>
-              <span style={{ 
-                display: "inline-block", 
-                width: "12px", 
-                height: "12px", 
-                borderRadius: "50%", 
-                border: "2px solid white",
-                borderTopColor: "transparent",
-                animation: "spin 1s linear infinite"
-              }}></span>
-              Translating...
-            </>
-          ) : (
-            "Translate with AI"
-          )}
+          ↔️
         </button>
         
-        {detectedLanguage && sourceLang === 'auto' && (
-          <div style={{
+        <select
+          value={props.targetLang}
+          onChange={(e) => props.onTargetLangChange?.(e.target.value)}
+          style={{
+            flex: 1,
+            padding: "8px",
+            borderRadius: "4px",
+            border: "1px solid #ddd"
+          }}
+        >
+          <option value="en">English</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="it">Italian</option>
+          <option value="pt">Portuguese</option>
+          <option value="ru">Russian</option>
+          <option value="zh">Chinese</option>
+          <option value="ja">Japanese</option>
+          <option value="ko">Korean</option>
+          <option value="ar">Arabic</option>
+          <option value="hi">Hindi</option>
+          <option value="hr">Croatian</option>
+        </select>
+      </div>
+      
+      {/* Source text input */}
+      <textarea
+        value={props.sourceText}
+        onChange={(e) => props.onSourceTextChange?.(e.target.value)}
+        placeholder="Enter text to translate"
+        style={{
+          width: "100%",
+          padding: "8px",
+          borderRadius: "4px",
+          border: "1px solid #ddd",
+          minHeight: "80px",
+          marginBottom: "10px",
+          resize: "vertical"
+        }}
+      />
+      
+      {/* Detected language information */}
+      {props.sourceLang === "auto" && props.detectedLanguage && (
+        <div
+          style={{
             fontSize: "12px",
             color: "#666",
-            marginBottom: "8px",
-            backgroundColor: "#f9f9f9",
-            padding: "4px 8px",
-            borderRadius: "4px"
-          }}>
-            Detected language: {languages.find(l => l.code === detectedLanguage)?.name || detectedLanguage}
-          </div>
-        )}
-        
-        <div
-          style={{
-            width: "100%",
-            minHeight: "80px",
-            padding: "8px",
-            borderRadius: "4px",
-            border: "1px solid #ddd",
-            backgroundColor: "#f9f9f9"
+            marginBottom: "10px"
           }}
         >
-          {translatedText || <span style={{ color: "#999" }}>Translation will appear here</span>}
+          Detected language: <strong>{props.detectedLanguage}</strong>
         </div>
-      </div>
-    </BaseCustomOverlay>
-  );
-};
-
-// New Explain Overlay component
-const ExplainOverlay: React.FC<any> = (props) => {
-  // Safely access properties with default values
-  const layout = props.layout || {};
-  const style = layout.style || {};
-  
-  const [inputText, setInputText] = useState(layout.inputText || '');
-  const [explanation, setExplanation] = useState(layout.explanation || '');
-  const [level, setLevel] = useState(layout.level || 'simple');
-  const [isExplaining, setIsExplaining] = useState(false);
-  const [history, setHistory] = useState<Array<any>>(layout.history || []);
-  const [showHistory, setShowHistory] = useState(false);
-  
-  // Different explanation levels
-  const explanationLevels = [
-    { id: 'simple', name: 'Simple (ELI5)', prompt: 'Explain this like I\'m 5 years old, using very simple language and concepts.' },
-    { id: 'detailed', name: 'Detailed', prompt: 'Explain this in a clear, detailed way for a general audience. Use analogies where helpful.' },
-    { id: 'technical', name: 'Technical', prompt: 'Provide a technical explanation with appropriate terminology and depth. Assume subject matter expertise.' }
-  ];
-  
-  // Get explanation from AI
-  const explainText = async () => {
-    if (!inputText.trim() || isExplaining) return;
-    
-    setIsExplaining(true);
-    
-    try {
-      // Get OpenAI API key
-      const apiKey = layout.apiKey || getOpenAIApiKey();
+      )}
       
-      if (!apiKey) {
-        throw new Error("OpenAI API key is required for explanation");
-      }
-      
-      // Get the current level's prompt
-      const currentLevel = explanationLevels.find(l => l.id === level) || explanationLevels[0];
-      
-      // Use OpenAI for explanation
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: "gpt-3.5-turbo",
-          messages: [
-            {
-              role: "system",
-              content: `You are an explanation assistant. ${currentLevel.prompt} Keep your explanation concise and focused.`
-            },
-            {
-              role: "user", 
-              content: inputText
-            }
-          ],
-          temperature: 0.5
-        })
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || "Error calling OpenAI API");
-      }
-      
-      const data = await response.json();
-      const result = data.choices[0].message.content.trim();
-      
-      setExplanation(result);
-      
-      // Add to history
-      const newHistoryItem = {
-        inputText,
-        explanation: result,
-        level,
-        timestamp: Date.now()
-      };
-      
-      const updatedHistory = [newHistoryItem, ...history].slice(0, 10); // Keep only the last 10 explanations
-      setHistory(updatedHistory);
-      
-      // Save to database if we have an ID
-      if (props.id) {
-        try {
-          // Get current data first
-          const { data: currentData, error: fetchError } = await supabase
-            .from("overlays")
-            .select("layout")
-            .eq("id", props.id)
-            .single();
-          
-          if (fetchError) throw fetchError;
-          
-          // Update the layout with new explanation and history
-          const updatedLayout = {
-            ...(currentData?.layout || {}),
-            inputText,
-            explanation: result,
-            level,
-            history: updatedHistory
-          };
-          
-          // Save to database
-          const { error } = await supabase
-            .from("overlays")
-            .update({ layout: updatedLayout })
-            .eq("id", props.id);
-          
-          if (error) throw error;
-        } catch (error) {
-          console.error("Error saving explanation:", error);
-        }
-      }
-    } catch (error) {
-      console.error("Explanation error:", error);
-      setExplanation(`Error: ${error.message || "Error generating explanation"}`);
-    } finally {
-      setIsExplaining(false);
-    }
-  };
-  
-  // Clear fields
-  const clearFields = () => {
-    setInputText('');
-    setExplanation('');
-  };
-  
-  return (
-    <BaseCustomOverlay {...props} style={style}>
-      <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
-        <div style={{
+      {/* Translate button */}
+      <button
+        onClick={() => props.onTranslate?.()}
+        disabled={props.isTranslating || !props.sourceText?.trim()}
+        style={{
+          backgroundColor: props.isTranslating || !props.sourceText?.trim() ? "#ddd" : "#4CAF50",
+          color: props.isTranslating || !props.sourceText?.trim() ? "#999" : "white",
+          border: "none",
+          borderRadius: "4px",
+          padding: "10px",
+          marginBottom: "10px",
+          fontSize: "14px",
+          cursor: props.isTranslating || !props.sourceText?.trim() ? "default" : "pointer",
           display: "flex",
-          justifyContent: "space-between",
           alignItems: "center",
-          marginBottom: "12px",
-          borderBottom: "1px solid #eee",
-          paddingBottom: "8px"
-        }}>
-          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>
-            Explain 
-            <span style={{ 
-              fontSize: "12px", 
-              fontWeight: "normal", 
-              backgroundColor: "#e9f5ff", 
-              color: "#0066cc",
-              padding: "2px 6px",
-              borderRadius: "10px",
-              marginLeft: "8px"
-            }}>
-              AI Powered
-            </span>
-          </h3>
-          
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button 
-              onClick={() => setShowHistory(!showHistory)}
-              style={{
-                background: "none",
-                border: "1px solid #ddd",
-                borderRadius: "4px",
-                padding: "4px 8px",
-                cursor: "pointer",
-                fontSize: "12px"
-              }}
-            >
-              {showHistory ? "Hide History" : "Show History"}
-            </button>
-            
-            <button 
-              onClick={clearFields}
-              style={{
-                background: "none",
-                border: "1px solid #ddd",
-                borderRadius: "4px",
-                padding: "4px 8px",
-                cursor: "pointer",
-                fontSize: "12px"
-              }}
-            >
-              Clear
-            </button>
-          </div>
-        </div>
-        
-        {showHistory && history.length > 0 && (
-          <div style={{
-            marginBottom: "16px",
-            maxHeight: "150px",
-            overflowY: "auto",
-            border: "1px solid #eee",
+          justifyContent: "center",
+          gap: "8px"
+        }}
+      >
+        {props.isTranslating ? (
+          <>
+            <div className="spinner" style={{
+              width: "16px",
+              height: "16px",
+              border: "2px solid rgba(255,255,255,0.3)",
+              borderRadius: "50%",
+              borderTopColor: "white",
+              animation: "spin 1s ease-in-out infinite"
+            }} />
+            Translating...
+          </>
+        ) : (
+          "Translate"
+        )}
+      </button>
+      
+      {/* Translation result */}
+      {props.translatedText && (
+        <div
+          style={{
+            backgroundColor: "#f9f9f9",
+            padding: "10px",
             borderRadius: "4px",
-            padding: "8px"
-          }}>
-            <h4 style={{ margin: "0 0 8px", fontSize: "14px", fontWeight: 600 }}>Recent Explanations</h4>
-            
-            {history.map((item, index) => (
-              <div 
+            border: "1px solid #eee",
+            marginBottom: "10px"
+          }}
+        >
+          {props.translatedText}
+        </div>
+      )}
+      
+      {/* Translation history */}
+      {props.showHistory && props.history?.length > 0 && (
+        <div
+          style={{
+            borderTop: "1px solid #eee",
+            marginTop: "10px",
+            paddingTop: "10px"
+          }}
+        >
+          <h4 style={{ margin: "0 0 10px 0", fontSize: "14px" }}>Translation History</h4>
+          <div
+            style={{
+              maxHeight: "200px",
+              overflowY: "auto"
+            }}
+          >
+            {props.history.map((item, index) => (
+              <div
                 key={index}
                 style={{
-                  padding: "8px",
-                  borderBottom: index < history.length - 1 ? "1px solid #eee" : "none",
                   fontSize: "13px",
-                  cursor: "pointer"
-                }}
-                onClick={() => {
-                  setInputText(item.inputText);
-                  setExplanation(item.explanation);
-                  setLevel(item.level);
+                  marginBottom: "10px",
+                  padding: "8px",
+                  backgroundColor: "#f5f5f5",
+                  borderRadius: "4px"
                 }}
               >
-                <div style={{ fontWeight: 500 }}>{item.inputText.length > 50 ? item.inputText.substring(0, 50) + '...' : item.inputText}</div>
-                <div style={{ color: "#666", fontSize: "11px" }}>
-                  {explanationLevels.find(l => l.id === item.level)?.name || item.level}
+                <div>
+                  <strong>{item.sourceLang === "auto" && item.detectedLanguage ? `Detected (${item.detectedLanguage})` : item.sourceLang}</strong>: {item.sourceText}
+                </div>
+                <div style={{ marginTop: "4px", color: "#333" }}>
+                  <strong>{item.targetLang}</strong>: {item.translatedText}
+                </div>
+                <div style={{ fontSize: "11px", color: "#999", marginTop: "4px" }}>
+                  {new Date(item.timestamp).toLocaleString()}
                 </div>
               </div>
             ))}
           </div>
-        )}
-        
-        <div style={{ display: "flex", marginBottom: "16px" }}>
-          <select
-            value={level}
-            onChange={(e) => setLevel(e.target.value as any)}
+        </div>
+      )}
+    </div>
+  </BaseCustomOverlay>
+);
+
+// New Explain Overlay component
+const ExplainOverlay: React.FC<any> = (props) => (
+  <BaseCustomOverlay {...props}>
+    <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        marginBottom: "12px"
+      }}>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            onClick={() => props.onToggleHistory?.()}
             style={{
-              width: "100%",
-              padding: "8px",
+              backgroundColor: props.showHistory ? "#4CAF50" : "#f0f0f0",
+              color: props.showHistory ? "white" : "#333",
+              border: "none",
               borderRadius: "4px",
-              border: "1px solid #ddd"
+              padding: "6px 10px",
+              fontSize: "13px",
+              cursor: "pointer"
             }}
           >
-            {explanationLevels.map(level => (
-              <option key={level.id} value={level.id}>{level.name}</option>
-            ))}
-          </select>
-        </div>
-        
-        <textarea
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder="Enter text that you want explained"
-          style={{
-            width: "100%",
-            height: "80px",
-            padding: "8px",
-            borderRadius: "4px",
-            border: "1px solid #ddd",
-            resize: "none",
-            marginBottom: "12px"
-          }}
-        />
-        
-        <button
-          onClick={explainText}
-          disabled={!inputText.trim() || isExplaining}
-          style={{
-            padding: "8px 16px",
-            backgroundColor: "#4CAF50",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            cursor: !inputText.trim() || isExplaining ? "not-allowed" : "pointer",
-            opacity: !inputText.trim() || isExplaining ? 0.7 : 1,
-            marginBottom: "12px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "8px"
-          }}
-        >
-          {isExplaining ? (
-            <>
-              <span style={{ 
-                display: "inline-block", 
-                width: "12px", 
-                height: "12px", 
-                borderRadius: "50%", 
-                border: "2px solid white",
-                borderTopColor: "transparent",
-                animation: "spin 1s linear infinite"
-              }}></span>
-              Generating Explanation...
-            </>
-          ) : (
-            "Explain This"
-          )}
-        </button>
-        
-        <div
-          style={{
-            width: "100%",
-            minHeight: "120px",
-            padding: "12px",
-            borderRadius: "4px",
-            border: "1px solid #ddd",
-            backgroundColor: "#f9f9f9",
-            whiteSpace: "pre-wrap",
-            lineHeight: "1.5"
-          }}
-        >
-          {explanation || <span style={{ color: "#999" }}>Explanation will appear here</span>}
+            {props.showHistory ? "Hide History" : "Show History"}
+          </button>
+          <button
+            onClick={() => props.onClearFields?.()}
+            style={{
+              backgroundColor: "#f0f0f0",
+              color: "#333",
+              border: "none",
+              borderRadius: "4px",
+              padding: "6px 10px",
+              fontSize: "13px",
+              cursor: "pointer"
+            }}
+          >
+            Clear
+          </button>
         </div>
       </div>
-    </BaseCustomOverlay>
-  );
-};
+
+      {/* Explanation level selection */}
+      <div style={{
+        marginBottom: "10px"
+      }}>
+        <select
+          value={props.level}
+          onChange={(e) => props.onLevelChange?.(e.target.value)}
+          style={{
+            width: "100%",
+            padding: "8px",
+            borderRadius: "4px",
+            border: "1px solid #ddd"
+          }}
+        >
+          <option value="simple">Simple (ELI5)</option>
+          <option value="detailed">Detailed</option>
+          <option value="technical">Technical</option>
+        </select>
+      </div>
+      
+      {/* Input text area */}
+      <textarea
+        value={props.inputText}
+        onChange={(e) => props.onInputTextChange?.(e.target.value)}
+        placeholder="Enter text to explain"
+        style={{
+          width: "100%",
+          padding: "8px",
+          borderRadius: "4px",
+          border: "1px solid #ddd",
+          minHeight: "80px",
+          marginBottom: "10px",
+          resize: "vertical"
+        }}
+      />
+      
+      {/* Explain button */}
+      <button
+        onClick={() => props.onExplain?.()}
+        disabled={props.isExplaining || !props.inputText?.trim()}
+        style={{
+          backgroundColor: props.isExplaining || !props.inputText?.trim() ? "#ddd" : "#4CAF50",
+          color: props.isExplaining || !props.inputText?.trim() ? "#999" : "white",
+          border: "none",
+          borderRadius: "4px",
+          padding: "10px",
+          marginBottom: "10px",
+          fontSize: "14px",
+          cursor: props.isExplaining || !props.inputText?.trim() ? "default" : "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "8px"
+        }}
+      >
+        {props.isExplaining ? (
+          <>
+            <div className="spinner" style={{
+              width: "16px",
+              height: "16px",
+              border: "2px solid rgba(255,255,255,0.3)",
+              borderRadius: "50%",
+              borderTopColor: "white",
+              animation: "spin 1s ease-in-out infinite"
+            }} />
+            Explaining...
+          </>
+        ) : (
+          "Explain This"
+        )}
+      </button>
+      
+      {/* Explanation result */}
+      {props.explanation && (
+        <div
+          style={{
+            backgroundColor: "#f9f9f9",
+            padding: "10px",
+            borderRadius: "4px",
+            border: "1px solid #eee",
+            marginBottom: "10px"
+          }}
+        >
+          {props.explanation}
+        </div>
+      )}
+      
+      {/* Explanation history */}
+      {props.showHistory && props.history?.length > 0 && (
+        <div
+          style={{
+            borderTop: "1px solid #eee",
+            marginTop: "10px",
+            paddingTop: "10px"
+          }}
+        >
+          <h4 style={{ margin: "0 0 10px 0", fontSize: "14px" }}>Explanation History</h4>
+          <div
+            style={{
+              maxHeight: "200px",
+              overflowY: "auto"
+            }}
+          >
+            {props.history.map((item, index) => (
+              <div
+                key={index}
+                style={{
+                  fontSize: "13px",
+                  marginBottom: "10px",
+                  padding: "8px",
+                  backgroundColor: "#f5f5f5",
+                  borderRadius: "4px"
+                }}
+              >
+                <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                  Input ({item.level}):
+                </div>
+                <div style={{ marginBottom: "8px" }}>
+                  {item.inputText.length > 100 ? `${item.inputText.substring(0, 100)}...` : item.inputText}
+                </div>
+                <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                  Explanation:
+                </div>
+                <div>
+                  {item.explanation.length > 150 ? `${item.explanation.substring(0, 150)}...` : item.explanation}
+                </div>
+                <div style={{ fontSize: "11px", color: "#999", marginTop: "4px" }}>
+                  {new Date(item.timestamp).toLocaleString()}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  </BaseCustomOverlay>
+);
 
 // Accept both the new strongly typed layout and the legacy format
 interface OverlayFactoryProps {
@@ -3089,27 +3036,60 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
         />;
         
       case "translation":
-        console.log("Rendering translation overlay:", id, layout);
-        return <TranslationOverlay 
-          id={id} 
-          layout={layout} 
-          style={layout.style || {}} 
-          url={layout.url || ""} 
-          zIndex={9999999 + id} 
+        console.log("Rendering translation overlay with props", layout);
+        const translationStyle = layout.style || {};
+        const translationUrl = layout.url || "";
+        const translationZIndex = 9999999 + id;
+        return <TranslationOverlay
+          id={id}
+          layout={layout}
+          style={translationStyle}
+          url={translationUrl}
+          zIndex={translationZIndex}
           onDelete={() => onDelete && onDelete(id)} 
           onPin={(isPinned) => onPin && onPin(id, isPinned)} 
+          onToggleHistory={() => {}}
+          onClearFields={() => {}}
+          onSourceLangChange={(value) => {}}
+          onSwitchLanguages={() => {}}
+          onTargetLangChange={(value) => {}}
+          onSourceTextChange={(value) => {}}
+          onTranslate={() => {}}
+          showHistory={false}
+          history={layout.history || []}
+          sourceLang={layout.sourceLang || "auto"}
+          targetLang={layout.targetLang || "en"}
+          sourceText={layout.sourceText || ""}
+          translatedText={layout.translatedText || ""}
+          isTranslating={false}
+          detectedLanguage={layout.detectedLanguage || null}
+          translationSource={layout.translationSource || "mock"}
         />;
         
       case "explain":
-        console.log("Rendering explain overlay:", id, layout);
-        return <ExplainOverlay 
-          id={id} 
-          layout={layout} 
-          style={layout.style || {}} 
-          url={layout.url || ""} 
-          zIndex={9999999 + id} 
+        console.log("Rendering explain overlay with props", layout);
+        const explainStyle = layout.style || {};
+        const explainUrl = layout.url || "";
+        const explainZIndex = 9999999 + id;
+        return <ExplainOverlay
+          id={id}
+          layout={layout}
+          style={explainStyle}
+          url={explainUrl}
+          zIndex={explainZIndex}
           onDelete={() => onDelete && onDelete(id)} 
           onPin={(isPinned) => onPin && onPin(id, isPinned)} 
+          onToggleHistory={() => {}}
+          onClearFields={() => {}}
+          onLevelChange={(value) => {}}
+          onInputTextChange={(value) => {}}
+          onExplain={() => {}}
+          showHistory={false}
+          history={layout.history || []}
+          level={layout.level || "simple"}
+          inputText={layout.inputText || ""}
+          explanation={layout.explanation || ""}
+          isExplaining={false}
         />;
         
       default:

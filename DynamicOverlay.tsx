@@ -1011,6 +1011,32 @@ const DynamicOverlay: React.FC<LayoutProps> = ({ style, content, id, url, zIndex
               width: "96px"
             }}>
               {/* User profile buttons */}
+              
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  ensureUsername(() => shareWithUser("marina"));
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-start",
+                  gap: "8px",
+                  background: "transparent",
+                  border: "none",
+                  padding: "5px 8px",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  width: "100%",
+                  textAlign: "left",
+                  fontSize: "13px",
+                  color: "#333"
+                }}
+              >
+                <User size={14} />
+                <span>Marina</span>
+              </button>
+
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1085,6 +1111,70 @@ const DynamicOverlay: React.FC<LayoutProps> = ({ style, content, id, url, zIndex
                 <User size={14} />
                 <span>Marko</span>
               </button>
+
+              <button
+              onClick={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+                
+                // Share overlay with all team members
+                const shareWithAllUsers = async () => {
+                  if (!id) return;
+                  
+                  try {
+                    // Get current overlay data
+                    const { data: overlayData, error: fetchError } = await supabase
+                      .from("overlays")
+                      .select("users")
+                      .eq("id", id)
+                      .single();
+                      
+                    if (fetchError) throw fetchError;
+                    
+                    // Add all team members to users list
+                    const currentUsers = overlayData?.users || "";
+                    const usersList = currentUsers.split(";").filter(user => user.trim() !== "");
+                    
+                    // Add all users if not already in the list
+                    if (!usersList.includes("vedran")) usersList.push("vedran");
+                    if (!usersList.includes("bruno")) usersList.push("bruno");
+                    if (!usersList.includes("marko")) usersList.push("marko");
+                    
+                    // Update the users field
+                    const updatedUsers = usersList.join(";");
+                    
+                    const { error } = await supabase
+                      .from("overlays")
+                      .update({ users: updatedUsers })
+                      .eq("id", id);
+                      
+                    if (error) throw error;
+                    
+                    console.log("Overlay shared with all team members successfully");
+                  } catch (error) {
+                    console.error("Error sharing overlay with team:", error);
+                  }
+                };
+                
+                shareWithAllUsers();
+                setShowProfileIcons(false);
+              }}
+              style={{
+                backgroundColor: "#8754D6", // Purple color to differentiate from individual shares
+                color: "white",
+                border: "none",
+                borderRadius: "6px",
+                width: "80px",
+                height: "30px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer"
+              }}
+              title="Share with all team members"
+            >
+              <span style={{ fontSize: "12px", fontWeight: "bold" }}>All Team</span>
+            </button>
             </div>
           )}
         </div>
