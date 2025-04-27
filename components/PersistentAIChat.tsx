@@ -1083,6 +1083,101 @@ const PersistentAIChat: React.FC = () => {
       return;
     }
     
+    // Special handling for /form command to create form from context
+    if (processedInput.startsWith('/form') && !isTalkMode) {
+      // Extract form instructions - everything after /form
+      const formRequest = processedInput.substring(5).trim();
+      
+      // Get active context items to use as data for the form
+      const activeContextItems = contextItems.filter(item => item.active);
+      
+      if (activeContextItems.length === 0) {
+        // If no context items, add a message suggesting to add context
+        setMessages([
+          ...messages,
+          { 
+            role: "user", 
+            content: processedInput,
+            timestamp: Date.now()
+          },
+          {
+            role: "assistant",
+            content: "Please add some context items and make them active before creating a form overlay. The AI will use the context to generate appropriate form fields.",
+            timestamp: Date.now() + 1
+          }
+        ]);
+        setInput("");
+        return;
+      }
+      
+      const contextData = activeContextItems.map(item => item.text).join("\n\n");
+      
+      // Transform the input to specifically request form overlay with context data
+      const enhancedInput = `/form ${formRequest}\n\nUSE THIS CONTEXT DATA TO POPULATE THE FORM FIELDS: ${contextData}\n\nAnalyze the context and create appropriate form fields based on this data. Include all necessary fields that would be relevant for collecting information related to this context.`;
+      
+      // Add user message
+      const newMessages = [
+        ...messages, 
+        { 
+          role: "user", 
+          content: enhancedInput,
+          timestamp: Date.now()
+        }
+      ];
+      
+      // Update state and clear input
+      setMessages(newMessages);
+      setInput("");
+      setIsLoading(true);
+      
+      try {
+        // Call OpenAI
+        const aiResponse = await callOpenAI(newMessages, false);
+        
+        // Add AI response to messages
+        const updatedMessages = [
+          ...newMessages,
+          {
+            role: "assistant",
+            content: aiResponse,
+            timestamp: Date.now()
+          }
+        ];
+        
+        setMessages(updatedMessages);
+        
+        // Try to parse the response as an overlay
+        const isOverlay = await tryParseOverlay(aiResponse);
+        
+        // If successfully created an overlay, add confirmation message
+        if (isOverlay) {
+          setMessages([
+            ...updatedMessages,
+            {
+              role: "assistant",
+              content: "✅ Form overlay created successfully! The AI has generated form fields based on your context data.",
+              timestamp: Date.now() + 1
+            }
+          ]);
+        }
+      } catch (error) {
+        // Add error message
+        const errorMessages = [
+          ...newMessages,
+          {
+            role: "assistant",
+            content: `Error: ${error.message || "Failed to get AI response"}`,
+            timestamp: Date.now()
+          }
+        ];
+        
+        setMessages(errorMessages);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+    
     if (isTalkMode) {
       // Remove the /talk prefix and any spaces that follow
       processedInput = processedInput.substring(5).trim();
