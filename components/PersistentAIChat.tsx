@@ -263,9 +263,102 @@ Each response should follow one of these formats:
   ]
 }
 
+USE THIS FORMAT FOR AN APPROVAL/SIGNATURE OVERLAY! SO IF I ASK FOR AN APPROVAL OVERLAY/ APPROVAL FORM/ SIGNATURE FORM OR SOMETHING LIKE THIS, USE THIS FORMAT!
+
+7. For an approval/signature overlay:
+{
+  "type": "approval",
+  "style": {
+    "width": 400,
+    "backgroundColor": "white",
+    "borderRadius": "8px",
+    "padding": "16px"
+  },
+  "title": "Document Approval",
+  "content": "I hereby confirm that I have reviewed the document and agree to its terms and conditions.",
+  "approveButtonText": "I Approve",
+  "rejectButtonText": "I Reject"
+}
+
+
+IF I ASK FOR A POLL OVERLAY/ POLL FORM/ VOTING FORM OR SOMETHING LIKE THIS, USE THIS FORMAT!
+
+8. For a poll with voting options:
+{
+  "type": "poll",
+  "style": {
+    "width": 450,
+    "backgroundColor": "white",
+    "borderRadius": "8px",
+    "padding": "16px"
+  },
+  "title": "Team Building Poll",
+  "question": "Where should we go for our next team building event?",
+  "options": [
+    {
+      "id": "option1",
+      "text": "Mountain Retreat",
+      "votes": 0
+    },
+    {
+      "id": "option2",
+      "text": "Beach Resort",
+      "votes": 0
+    },
+    {
+      "id": "option3",
+      "text": "City Tour",
+      "votes": 0
+    },
+    {
+      "id": "option4",
+      "text": "Adventure Park",
+      "votes": 0
+    }
+  ],
+  "votedBy": [],
+  "totalVotes": 0
+}
+
+9. For a translation tool:
+{
+  "type": "translation",
+  "style": {
+    "width": 450,
+    "backgroundColor": "white",
+    "borderRadius": "8px",
+    "padding": "16px"
+  },
+  "sourceText": "",
+  "translatedText": "",
+  "sourceLang": "auto",
+  "targetLang": "en",
+  "history": []
+}
+
+10. For an explanation tool (ELI5 - Explain Like I'm 5):
+{
+  "type": "explain",
+  "style": {
+    "width": 450,
+    "backgroundColor": "white",
+    "borderRadius": "8px",
+    "padding": "16px"
+  },
+  "inputText": "",
+  "explanation": "",
+  "level": "simple",
+  "history": []
+}
+
+
+IF I ASK FOR TRANSLATION OR LANGUAGE TRANSLATION, USE FORMAT #9 ABOVE.
+IF I ASK FOR EXPLANATION OR TO EXPLAIN SOMETHING, USE FORMAT #10 ABOVE.
+
 Note that forms can have any number of fields of different types.
 
 Please respond with valid JSON in one of these formats when I need a specific overlay type.
+
 `;
 
 /**
@@ -447,18 +540,38 @@ const PersistentAIChat: React.FC = () => {
   // Try to parse response as JSON overlay
   const tryParseOverlay = async (content: string) => {
     try {
+      console.log("Attempting to parse overlay from content:", content);
+      
+      // Check if content explicitly asks for a translation overlay but didn't parse as JSON
+      if (content.toLowerCase().includes('translation') && 
+          (content.toLowerCase().includes('overlay') || content.toLowerCase().includes('tool'))) {
+        console.log("Content mentions translation overlay, trying manual creation");
+        return await createTranslationOverlay();
+      }
+      
+      // Check if content explicitly asks for an explain overlay but didn't parse as JSON
+      if ((content.toLowerCase().includes('explain') || content.toLowerCase().includes('eli5')) && 
+          (content.toLowerCase().includes('overlay') || content.toLowerCase().includes('tool'))) {
+        console.log("Content mentions explain overlay, trying manual creation");
+        return await createExplainOverlay();
+      }
+      
       // Try to extract JSON if it's wrapped in markdown code blocks
       let jsonContent = content;
       const jsonMatch = content.match(/```(?:json)?([\s\S]*?)```/);
       if (jsonMatch && jsonMatch[1]) {
         jsonContent = jsonMatch[1].trim();
+        console.log("Extracted JSON from code block:", jsonContent);
       }
       
       // Parse JSON
+      console.log("Attempting to parse JSON:", jsonContent);
       const parsedContent = JSON.parse(jsonContent);
+      console.log("Parsed content:", parsedContent);
+      console.log("Content type:", parsedContent.type);
       
       // Check if it has the expected format
-      if (parsedContent && parsedContent.type && ['note', 'button', 'timer', 'search', 'form', 'grid'].includes(parsedContent.type)) {
+      if (parsedContent && parsedContent.type && ['note', 'button', 'timer', 'search', 'form', 'grid', 'approval', 'poll', 'translation', 'explain'].includes(parsedContent.type)) {
         console.log("Creating overlay of type:", parsedContent.type);
         
         // Additional validation for grid type
@@ -519,6 +632,83 @@ const PersistentAIChat: React.FC = () => {
     }
     
     return false;
+  };
+
+  // Create a translation overlay directly
+  const createTranslationOverlay = async () => {
+    try {
+      console.log("Creating translation overlay directly");
+      
+      // Get position for the new overlay
+      const { data } = await supabase.from("overlays").select();
+      const position = calculateNextPosition(data || []);
+      
+      // Create the layout
+      const translationLayout = {
+        type: "translation",
+        style: {
+          top: position.top,
+          left: position.left,
+          width: 450,
+          backgroundColor: "white",
+          borderRadius: "8px",
+          padding: "16px"
+        },
+        sourceText: "",
+        translatedText: "",
+        sourceLang: "auto",
+        targetLang: "en",
+        history: [],
+        url: window.location.href
+      };
+      
+      // Create the overlay
+      const result = await createOverlayWithCurrentUsername("Translation", translationLayout);
+      console.log("Translation overlay created:", result);
+      
+      return result !== null;
+    } catch (error) {
+      console.error("Error creating translation overlay:", error);
+      return false;
+    }
+  };
+
+  // Create an explain overlay directly
+  const createExplainOverlay = async () => {
+    try {
+      console.log("Creating explain overlay directly");
+      
+      // Get position for the new overlay
+      const { data } = await supabase.from("overlays").select();
+      const position = calculateNextPosition(data || []);
+      
+      // Create the layout
+      const explainLayout = {
+        type: "explain",
+        style: {
+          top: position.top,
+          left: position.left,
+          width: 450,
+          backgroundColor: "white",
+          borderRadius: "8px",
+          padding: "16px"
+        },
+        inputText: "",
+        explanation: "",
+        level: "simple",
+        history: [],
+        url: window.location.href
+      };
+      
+      // Create the overlay
+      const result = await createOverlayWithCurrentUsername("Explanation", explainLayout);
+      console.log("Explain overlay created:", result);
+      
+      return result !== null;
+    } catch (error) {
+      console.error("Error creating explain overlay:", error);
+      return false;
+    }
   };
 
   // Handle sending a message

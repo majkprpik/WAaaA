@@ -141,6 +141,69 @@ export interface ChatAiLayout extends BaseLayoutProps {
   model?: string;
 }
 
+// Approval/Signature overlay
+export interface ApprovalLayout extends BaseLayoutProps {
+  type: "approval";
+  title?: string;
+  content: string;
+  approveButtonText?: string;
+  rejectButtonText?: string;
+  approvedBy?: string;
+  approvedAt?: number;
+  rejected?: boolean;
+  rejectedBy?: string;
+  rejectedAt?: number;
+}
+
+// Poll overlay
+export interface PollLayout extends BaseLayoutProps {
+  type: "poll";
+  title: string;
+  question: string;
+  options: Array<{
+    id: string;
+    text: string;
+    votes: number;
+  }>;
+  multipleChoice?: boolean;
+  votedBy?: string[];
+  totalVotes?: number;
+  createdAt?: number;
+  expiresAt?: number;
+}
+
+// Translation overlay
+export interface TranslationLayout extends BaseLayoutProps {
+  type: "translation";
+  sourceText?: string;
+  translatedText?: string;
+  sourceLang?: string;
+  targetLang?: string;
+  history?: Array<{
+    sourceText: string;
+    translatedText: string;
+    sourceLang: string;
+    targetLang: string;
+    timestamp: number;
+  }>;
+  apiKey?: string;
+}
+
+// Explain overlay
+export interface ExplainLayout extends BaseLayoutProps {
+  type: "explain";
+  inputText?: string;
+  explanation?: string;
+  level?: "simple" | "detailed" | "technical";
+  history?: Array<{
+    inputText: string;
+    explanation: string;
+    level: string;
+    timestamp: number;
+  }>;
+  apiKey?: string;
+}
+
 // Any other overlay type
 export interface CustomLayout extends BaseLayoutProps {
   type: string;
@@ -156,6 +219,10 @@ export type OverlayLayout =
   | ChatAiLayout
   | FormLayout
   | GridLayout
+  | ApprovalLayout
+  | PollLayout
+  | TranslationLayout
+  | ExplainLayout
   | CustomLayout;
 
 export interface OverlayData {

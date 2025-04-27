@@ -1771,6 +1771,1124 @@ const GridOverlay: React.FC<any> = (props) => {
   );
 };
 
+// New Approval Overlay component
+const ApprovalOverlay: React.FC<any> = (props) => {
+  // Safely access properties with default values if they don't exist
+  const layout = props.layout || {};
+  const style = layout.style || {};
+  
+  const [isApproved, setIsApproved] = useState(layout.approvedBy ? true : false);
+  const [isRejected, setIsRejected] = useState(layout.rejected || false);
+  const [currentUsername, setCurrentUsername] = useState<string>("");
+
+  // Load username when component mounts
+  useEffect(() => {
+    // Get username from background script
+    chrome.runtime.sendMessage({ action: "get_username" }, (response) => {
+      if (response && response.username) {
+        setCurrentUsername(response.username);
+      }
+    });
+  }, []);
+
+  // Handle approval
+  const handleApprove = async () => {
+    if (isApproved || isRejected) return;
+
+    // Update local state
+    setIsApproved(true);
+
+    // Update database if we have an ID
+    if (props.id) {
+      try {
+        // Get current data first
+        const { data: currentData, error: fetchError } = await supabase
+          .from("overlays")
+          .select("layout")
+          .eq("id", props.id)
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        // Update the layout with approval info
+        const updatedLayout = {
+          ...(currentData?.layout || {}),
+          approvedBy: currentUsername,
+          approvedAt: Date.now()
+        };
+
+        // Save to database
+        const { error } = await supabase
+          .from("overlays")
+          .update({ layout: updatedLayout })
+          .eq("id", props.id);
+
+        if (error) throw error;
+      } catch (error) {
+        console.error("Error updating approval status:", error);
+      }
+    }
+  };
+
+  // Handle rejection
+  const handleReject = async () => {
+    if (isApproved || isRejected) return;
+
+    // Update local state
+    setIsRejected(true);
+
+    // Update database if we have an ID
+    if (props.id) {
+      try {
+        // Get current data first
+        const { data: currentData, error: fetchError } = await supabase
+          .from("overlays")
+          .select("layout")
+          .eq("id", props.id)
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        // Update the layout with rejection info
+        const updatedLayout = {
+          ...(currentData?.layout || {}),
+          rejected: true,
+          rejectedBy: currentUsername,
+          rejectedAt: Date.now()
+        };
+
+        // Save to database
+        const { error } = await supabase
+          .from("overlays")
+          .update({ layout: updatedLayout })
+          .eq("id", props.id);
+
+        if (error) throw error;
+      } catch (error) {
+        console.error("Error updating rejection status:", error);
+      }
+    }
+  };
+
+  return (
+    <BaseCustomOverlay {...props} style={style}>
+      <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+        {layout.title && (
+          <div style={{
+            fontWeight: 600,
+            fontSize: "18px",
+            marginBottom: "12px",
+            borderBottom: "1px solid #eee",
+            paddingBottom: "8px"
+          }}>
+            {layout.title}
+          </div>
+        )}
+        
+        <div style={{ margin: "8px 0 16px" }}>
+          {layout.content || "Please approve or reject this item"}
+        </div>
+        
+        {isApproved ? (
+          <div style={{ 
+            color: "green", 
+            padding: "8px", 
+            borderRadius: "4px", 
+            background: "#e6f7e6",
+            marginTop: "8px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px"
+          }}>
+            <span style={{ fontSize: "18px" }}>✓</span>
+            <span>Approved by {layout.approvedBy || currentUsername}</span>
+          </div>
+        ) : isRejected ? (
+          <div style={{ 
+            color: "#d32f2f", 
+            padding: "8px", 
+            borderRadius: "4px", 
+            background: "#fdecea",
+            marginTop: "8px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px"
+          }}>
+            <span style={{ fontSize: "18px" }}>✕</span>
+            <span>Rejected by {layout.rejectedBy || currentUsername}</span>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
+            <button
+              onClick={handleApprove}
+              style={{
+                flex: 1,
+                padding: "8px 16px",
+                borderRadius: "4px",
+                backgroundColor: "#4caf50",
+                color: "white",
+                border: "none",
+                cursor: "pointer",
+                fontWeight: 500
+              }}
+            >
+              {layout.approveButtonText || "Approve"}
+            </button>
+            <button
+              onClick={handleReject}
+              style={{
+                flex: 1,
+                padding: "8px 16px",
+                borderRadius: "4px",
+                backgroundColor: "#f44336",
+                color: "white",
+                border: "none",
+                cursor: "pointer",
+                fontWeight: 500
+              }}
+            >
+              {layout.rejectButtonText || "Reject"}
+            </button>
+          </div>
+        )}
+      </div>
+    </BaseCustomOverlay>
+  );
+};
+
+// New Poll Overlay component
+const PollOverlay: React.FC<any> = (props) => {
+  // Safely access properties with default values
+  const layout = props.layout || {};
+  const style = layout.style || {};
+  
+  const [pollOptions, setPollOptions] = useState(layout.options || []);
+  const [voted, setVoted] = useState(false);
+  const [currentUsername, setCurrentUsername] = useState<string>("");
+  const [totalVotes, setTotalVotes] = useState(layout.totalVotes || 0);
+  const [isUpdating, setIsUpdating] = useState(false);
+  
+  // Calculate the maximum votes for scaling
+  const maxVotes = Math.max(...pollOptions.map(option => option.votes || 0), 1);
+  
+  // Load username and check if already voted
+  useEffect(() => {
+    // Get username from background script
+    chrome.runtime.sendMessage({ action: "get_username" }, (response) => {
+      if (response && response.username) {
+        const username = response.username;
+        setCurrentUsername(username);
+        
+        // Check if this user has already voted
+        if (layout.votedBy && Array.isArray(layout.votedBy) && layout.votedBy.includes(username)) {
+          setVoted(true);
+        }
+      }
+    });
+  }, [layout.votedBy]);
+  
+  // Handle vote
+  const handleVote = async (optionId: string) => {
+    if (voted || isUpdating) return;
+    
+    setIsUpdating(true);
+    
+    try {
+      // Get current data first to ensure we have the latest votes
+      const { data: currentData, error: fetchError } = await supabase
+        .from("overlays")
+        .select("layout")
+        .eq("id", props.id)
+        .single();
+      
+      if (fetchError) throw fetchError;
+      
+      // Create a deep copy of the current layout
+      const currentLayout = currentData?.layout || {};
+      const currentOptions = [...(currentLayout.options || [])];
+      const currentVotedBy = [...(currentLayout.votedBy || [])];
+      const currentTotalVotes = (currentLayout.totalVotes || 0) + 1;
+      
+      // Find the option and increment its votes
+      const updatedOptions = currentOptions.map(option => {
+        if (option.id === optionId) {
+          return { ...option, votes: (option.votes || 0) + 1 };
+        }
+        return option;
+      });
+      
+      // Add user to votedBy array if not already there
+      if (!currentVotedBy.includes(currentUsername)) {
+        currentVotedBy.push(currentUsername);
+      }
+      
+      // Create updated layout
+      const updatedLayout = {
+        ...currentLayout,
+        options: updatedOptions,
+        votedBy: currentVotedBy,
+        totalVotes: currentTotalVotes
+      };
+      
+      // Update in database
+      const { error } = await supabase
+        .from("overlays")
+        .update({ layout: updatedLayout })
+        .eq("id", props.id);
+      
+      if (error) throw error;
+      
+      // Update local state
+      setPollOptions(updatedOptions);
+      setVoted(true);
+      setTotalVotes(currentTotalVotes);
+      
+      console.log("Vote recorded successfully");
+    } catch (error) {
+      console.error("Error recording vote:", error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+  
+  // Get percentage width for a vote bar
+  const getPercentage = (votes: number) => {
+    if (maxVotes === 0) return 0;
+    return (votes / maxVotes) * 100;
+  };
+  
+  return (
+    <BaseCustomOverlay {...props} style={style}>
+      <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+        {layout.title && (
+          <div style={{
+            fontWeight: 600,
+            fontSize: "18px",
+            marginBottom: "8px",
+            borderBottom: "1px solid #eee",
+            paddingBottom: "8px"
+          }}>
+            {layout.title}
+          </div>
+        )}
+        
+        {layout.question && (
+          <div style={{ 
+            margin: "0 0 16px", 
+            fontSize: "16px",
+            fontWeight: 500
+          }}>
+            {layout.question}
+          </div>
+        )}
+        
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px",
+          marginTop: "8px"
+        }}>
+          {pollOptions.map(option => (
+            <div 
+              key={option.id}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px"
+              }}
+            >
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center"
+              }}>
+                <span style={{ fontSize: "14px" }}>{option.text}</span>
+                <span style={{ fontSize: "14px", fontWeight: 500 }}>{option.votes || 0} votes</span>
+              </div>
+              
+              <div style={{
+                width: "100%",
+                height: "30px",
+                border: "1px solid #e0e0e0",
+                borderRadius: "4px",
+                overflow: "hidden",
+                position: "relative",
+                cursor: voted ? "default" : "pointer",
+                opacity: voted ? 0.9 : 1,
+                transition: "all 0.2s ease"
+              }} 
+              onClick={() => !voted && handleVote(option.id)}
+              >
+                <div style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  height: "100%",
+                  width: `${getPercentage(option.votes || 0)}%`,
+                  backgroundColor: voted ? 
+                    (currentUsername && layout.votedBy?.includes(currentUsername) && option.id === pollOptions.find(opt => opt.votes === maxVotes)?.id ? 
+                      "#4CAF50" : "#2196F3") : 
+                    "#2196F3",
+                  transition: "width 0.5s ease-out"
+                }} />
+                
+                <div style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  height: "100%",
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: option.votes > 2 ? "white" : "#333",
+                  fontWeight: 500,
+                  fontSize: "14px",
+                  zIndex: 2
+                }}>
+                  {!voted ? "Click to vote" : `${Math.round(getPercentage(option.votes || 0))}%`}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        
+        <div style={{
+          marginTop: "16px",
+          fontSize: "13px",
+          color: "#666",
+          textAlign: "center"
+        }}>
+          {voted ? 
+            `You've voted. Total votes: ${totalVotes}` : 
+            "Click on an option to vote"}
+        </div>
+      </div>
+    </BaseCustomOverlay>
+  );
+};
+
+// New Translation Overlay component
+const TranslationOverlay: React.FC<any> = (props) => {
+  // Safely access properties with default values
+  const layout = props.layout || {};
+  const style = layout.style || {};
+  
+  const [sourceText, setSourceText] = useState(layout.sourceText || '');
+  const [translatedText, setTranslatedText] = useState(layout.translatedText || '');
+  const [sourceLang, setSourceLang] = useState(layout.sourceLang || 'auto');
+  const [targetLang, setTargetLang] = useState(layout.targetLang || 'en');
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [history, setHistory] = useState<Array<any>>(layout.history || []);
+  const [showHistory, setShowHistory] = useState(false);
+  const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
+  const [translationSource, setTranslationSource] = useState<'ai' | 'mock'>('ai');
+  
+  // List of common languages
+  const languages = [
+    { code: 'auto', name: 'Auto Detect' },
+    { code: 'en', name: 'English' },
+    { code: 'hr', name: 'Croatian' },
+    { code: 'es', name: 'Spanish' },
+    { code: 'fr', name: 'French' },
+    { code: 'de', name: 'German' },
+    { code: 'it', name: 'Italian' },
+    { code: 'ja', name: 'Japanese' },
+    { code: 'ko', name: 'Korean' },
+    { code: 'pt', name: 'Portuguese' },
+    { code: 'ru', name: 'Russian' },
+    { code: 'zh-CN', name: 'Chinese (Simplified)' }
+  ];
+  
+  // Translate text using API
+  const translateText = async () => {
+    if (!sourceText.trim() || isTranslating) return;
+    
+    setIsTranslating(true);
+    setDetectedLanguage(null);
+    
+    try {
+      // Get OpenAI API key
+      const apiKey = layout.apiKey || getOpenAIApiKey();
+      
+      if (!apiKey) {
+        throw new Error("OpenAI API key is required for AI translation");
+      }
+      
+      let result = "";
+      setTranslationSource('ai');
+      
+      // Use OpenAI for translation
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo",
+          messages: [
+            {
+              role: "system",
+              content: `You are a translation assistant. Translate the following text from ${
+                sourceLang === 'auto' ? 'the detected language' : languages.find(l => l.code === sourceLang)?.name || sourceLang
+              } to ${
+                languages.find(l => l.code === targetLang)?.name || targetLang
+              }. 
+              
+              ${sourceLang === 'auto' ? 'Also detect the source language and include it in your response in the format: "[DETECTED:language_code]translated text".' : 'Provide only the translated text with no explanations or additional content.'}`
+            },
+            {
+              role: "user", 
+              content: sourceText
+            }
+          ],
+          temperature: 0.3
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || "Error calling OpenAI API");
+      }
+      
+      const data = await response.json();
+      result = data.choices[0].message.content.trim();
+      
+      // Check if we have language detection info
+      if (sourceLang === 'auto' && result.includes('[DETECTED:')) {
+        const detectionMatch = result.match(/\[DETECTED:(\w{2}(?:-\w{2})?)\](.*)/s);
+        if (detectionMatch) {
+          const detected = detectionMatch[1];
+          result = detectionMatch[2].trim();
+          setDetectedLanguage(detected);
+        }
+      }
+      
+      setTranslatedText(result);
+      
+      // Add to history
+      const newHistoryItem = {
+        sourceText,
+        translatedText: result,
+        sourceLang: detectedLanguage || sourceLang,
+        targetLang,
+        timestamp: Date.now()
+      };
+      
+      const updatedHistory = [newHistoryItem, ...history].slice(0, 10); // Keep only the last 10 translations
+      setHistory(updatedHistory);
+      
+      // Save to database if we have an ID
+      if (props.id) {
+        try {
+          // Get current data first
+          const { data: currentData, error: fetchError } = await supabase
+            .from("overlays")
+            .select("layout")
+            .eq("id", props.id)
+            .single();
+          
+          if (fetchError) throw fetchError;
+          
+          // Update the layout with new translation and history
+          const updatedLayout = {
+            ...(currentData?.layout || {}),
+            sourceText,
+            translatedText: result,
+            sourceLang: detectedLanguage || sourceLang,
+            targetLang,
+            history: updatedHistory
+          };
+          
+          // Save to database
+          const { error } = await supabase
+            .from("overlays")
+            .update({ layout: updatedLayout })
+            .eq("id", props.id);
+          
+          if (error) throw error;
+        } catch (error) {
+          console.error("Error saving translation:", error);
+        }
+      }
+    } catch (error) {
+      console.error("Translation error:", error);
+      
+      // Fall back to mock translation if OpenAI fails
+      try {
+        setTranslationSource('mock');
+        // Simple simulation as fallback
+        const mockResult = `[${sourceText}] translated from ${sourceLang} to ${targetLang}`;
+        setTranslatedText(mockResult);
+      } catch (mockError) {
+        setTranslatedText(`Error: ${error.message || "Error translating text"}`);
+      }
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+  
+  // Switch languages
+  const switchLanguages = () => {
+    // Don't switch if source is auto-detect
+    if (sourceLang === 'auto') return;
+    
+    const tempLang = sourceLang;
+    setSourceLang(targetLang);
+    setTargetLang(tempLang);
+    
+    // If we have a translated text, swap it with source
+    if (translatedText) {
+      setSourceText(translatedText);
+      setTranslatedText(sourceText);
+    }
+  };
+  
+  // Clear fields
+  const clearFields = () => {
+    setSourceText('');
+    setTranslatedText('');
+    setDetectedLanguage(null);
+  };
+  
+  return (
+    <BaseCustomOverlay {...props} style={style}>
+      <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "12px",
+          borderBottom: "1px solid #eee",
+          paddingBottom: "8px"
+        }}>
+          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>
+            Translation 
+            {translationSource === 'ai' && 
+              <span style={{ 
+                fontSize: "12px", 
+                fontWeight: "normal", 
+                backgroundColor: "#e9f5ff", 
+                color: "#0066cc",
+                padding: "2px 6px",
+                borderRadius: "10px",
+                marginLeft: "8px"
+              }}>
+                AI Powered
+              </span>
+            }
+          </h3>
+          
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button 
+              onClick={() => setShowHistory(!showHistory)}
+              style={{
+                background: "none",
+                border: "1px solid #ddd",
+                borderRadius: "4px",
+                padding: "4px 8px",
+                cursor: "pointer",
+                fontSize: "12px"
+              }}
+            >
+              {showHistory ? "Hide History" : "Show History"}
+            </button>
+            
+            <button 
+              onClick={clearFields}
+              style={{
+                background: "none",
+                border: "1px solid #ddd",
+                borderRadius: "4px",
+                padding: "4px 8px",
+                cursor: "pointer",
+                fontSize: "12px"
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+        
+        {showHistory && history.length > 0 && (
+          <div style={{
+            marginBottom: "16px",
+            maxHeight: "150px",
+            overflowY: "auto",
+            border: "1px solid #eee",
+            borderRadius: "4px",
+            padding: "8px"
+          }}>
+            <h4 style={{ margin: "0 0 8px", fontSize: "14px", fontWeight: 600 }}>Recent Translations</h4>
+            
+            {history.map((item, index) => (
+              <div 
+                key={index}
+                style={{
+                  padding: "8px",
+                  borderBottom: index < history.length - 1 ? "1px solid #eee" : "none",
+                  fontSize: "13px",
+                  cursor: "pointer"
+                }}
+                onClick={() => {
+                  setSourceText(item.sourceText);
+                  setTranslatedText(item.translatedText);
+                  setSourceLang(item.sourceLang);
+                  setTargetLang(item.targetLang);
+                }}
+              >
+                <div style={{ fontWeight: 500 }}>{item.sourceText}</div>
+                <div style={{ color: "#666" }}>{item.translatedText}</div>
+                <div style={{ fontSize: "11px", color: "#999", marginTop: "4px" }}>
+                  {languages.find(l => l.code === item.sourceLang)?.name || item.sourceLang} → 
+                  {languages.find(l => l.code === item.targetLang)?.name || item.targetLang}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+          <select
+            value={sourceLang}
+            onChange={(e) => {
+              setSourceLang(e.target.value);
+              setDetectedLanguage(null);
+            }}
+            style={{
+              flex: 1,
+              padding: "8px",
+              borderRadius: "4px",
+              border: "1px solid #ddd"
+            }}
+          >
+            {languages.map(lang => (
+              <option key={lang.code} value={lang.code}>{lang.name}</option>
+            ))}
+          </select>
+          
+          <button
+            onClick={switchLanguages}
+            disabled={sourceLang === 'auto'}
+            style={{
+              background: "none",
+              border: "1px solid #ddd",
+              borderRadius: "4px",
+              padding: "0 8px",
+              cursor: sourceLang === 'auto' ? "not-allowed" : "pointer",
+              opacity: sourceLang === 'auto' ? 0.5 : 1
+            }}
+            title={sourceLang === 'auto' ? "Can't switch when source language is Auto Detect" : "Switch languages"}
+          >
+            ⇄
+          </button>
+          
+          <select
+            value={targetLang}
+            onChange={(e) => setTargetLang(e.target.value)}
+            style={{
+              flex: 1,
+              padding: "8px",
+              borderRadius: "4px",
+              border: "1px solid #ddd"
+            }}
+          >
+            {languages.filter(lang => lang.code !== 'auto').map(lang => (
+              <option key={lang.code} value={lang.code}>{lang.name}</option>
+            ))}
+          </select>
+        </div>
+        
+        <textarea
+          value={sourceText}
+          onChange={(e) => setSourceText(e.target.value)}
+          placeholder="Enter text to translate"
+          style={{
+            width: "100%",
+            height: "80px",
+            padding: "8px",
+            borderRadius: "4px",
+            border: "1px solid #ddd",
+            resize: "none",
+            marginBottom: "12px"
+          }}
+        />
+        
+        <button
+          onClick={translateText}
+          disabled={!sourceText.trim() || isTranslating}
+          style={{
+            padding: "8px 16px",
+            backgroundColor: "#2196F3",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: !sourceText.trim() || isTranslating ? "not-allowed" : "pointer",
+            opacity: !sourceText.trim() || isTranslating ? 0.7 : 1,
+            marginBottom: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px"
+          }}
+        >
+          {isTranslating ? (
+            <>
+              <span style={{ 
+                display: "inline-block", 
+                width: "12px", 
+                height: "12px", 
+                borderRadius: "50%", 
+                border: "2px solid white",
+                borderTopColor: "transparent",
+                animation: "spin 1s linear infinite"
+              }}></span>
+              Translating...
+            </>
+          ) : (
+            "Translate with AI"
+          )}
+        </button>
+        
+        {detectedLanguage && sourceLang === 'auto' && (
+          <div style={{
+            fontSize: "12px",
+            color: "#666",
+            marginBottom: "8px",
+            backgroundColor: "#f9f9f9",
+            padding: "4px 8px",
+            borderRadius: "4px"
+          }}>
+            Detected language: {languages.find(l => l.code === detectedLanguage)?.name || detectedLanguage}
+          </div>
+        )}
+        
+        <div
+          style={{
+            width: "100%",
+            minHeight: "80px",
+            padding: "8px",
+            borderRadius: "4px",
+            border: "1px solid #ddd",
+            backgroundColor: "#f9f9f9"
+          }}
+        >
+          {translatedText || <span style={{ color: "#999" }}>Translation will appear here</span>}
+        </div>
+      </div>
+    </BaseCustomOverlay>
+  );
+};
+
+// New Explain Overlay component
+const ExplainOverlay: React.FC<any> = (props) => {
+  // Safely access properties with default values
+  const layout = props.layout || {};
+  const style = layout.style || {};
+  
+  const [inputText, setInputText] = useState(layout.inputText || '');
+  const [explanation, setExplanation] = useState(layout.explanation || '');
+  const [level, setLevel] = useState(layout.level || 'simple');
+  const [isExplaining, setIsExplaining] = useState(false);
+  const [history, setHistory] = useState<Array<any>>(layout.history || []);
+  const [showHistory, setShowHistory] = useState(false);
+  
+  // Different explanation levels
+  const explanationLevels = [
+    { id: 'simple', name: 'Simple (ELI5)', prompt: 'Explain this like I\'m 5 years old, using very simple language and concepts.' },
+    { id: 'detailed', name: 'Detailed', prompt: 'Explain this in a clear, detailed way for a general audience. Use analogies where helpful.' },
+    { id: 'technical', name: 'Technical', prompt: 'Provide a technical explanation with appropriate terminology and depth. Assume subject matter expertise.' }
+  ];
+  
+  // Get explanation from AI
+  const explainText = async () => {
+    if (!inputText.trim() || isExplaining) return;
+    
+    setIsExplaining(true);
+    
+    try {
+      // Get OpenAI API key
+      const apiKey = layout.apiKey || getOpenAIApiKey();
+      
+      if (!apiKey) {
+        throw new Error("OpenAI API key is required for explanation");
+      }
+      
+      // Get the current level's prompt
+      const currentLevel = explanationLevels.find(l => l.id === level) || explanationLevels[0];
+      
+      // Use OpenAI for explanation
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo",
+          messages: [
+            {
+              role: "system",
+              content: `You are an explanation assistant. ${currentLevel.prompt} Keep your explanation concise and focused.`
+            },
+            {
+              role: "user", 
+              content: inputText
+            }
+          ],
+          temperature: 0.5
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || "Error calling OpenAI API");
+      }
+      
+      const data = await response.json();
+      const result = data.choices[0].message.content.trim();
+      
+      setExplanation(result);
+      
+      // Add to history
+      const newHistoryItem = {
+        inputText,
+        explanation: result,
+        level,
+        timestamp: Date.now()
+      };
+      
+      const updatedHistory = [newHistoryItem, ...history].slice(0, 10); // Keep only the last 10 explanations
+      setHistory(updatedHistory);
+      
+      // Save to database if we have an ID
+      if (props.id) {
+        try {
+          // Get current data first
+          const { data: currentData, error: fetchError } = await supabase
+            .from("overlays")
+            .select("layout")
+            .eq("id", props.id)
+            .single();
+          
+          if (fetchError) throw fetchError;
+          
+          // Update the layout with new explanation and history
+          const updatedLayout = {
+            ...(currentData?.layout || {}),
+            inputText,
+            explanation: result,
+            level,
+            history: updatedHistory
+          };
+          
+          // Save to database
+          const { error } = await supabase
+            .from("overlays")
+            .update({ layout: updatedLayout })
+            .eq("id", props.id);
+          
+          if (error) throw error;
+        } catch (error) {
+          console.error("Error saving explanation:", error);
+        }
+      }
+    } catch (error) {
+      console.error("Explanation error:", error);
+      setExplanation(`Error: ${error.message || "Error generating explanation"}`);
+    } finally {
+      setIsExplaining(false);
+    }
+  };
+  
+  // Clear fields
+  const clearFields = () => {
+    setInputText('');
+    setExplanation('');
+  };
+  
+  return (
+    <BaseCustomOverlay {...props} style={style}>
+      <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "12px",
+          borderBottom: "1px solid #eee",
+          paddingBottom: "8px"
+        }}>
+          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>
+            Explain 
+            <span style={{ 
+              fontSize: "12px", 
+              fontWeight: "normal", 
+              backgroundColor: "#e9f5ff", 
+              color: "#0066cc",
+              padding: "2px 6px",
+              borderRadius: "10px",
+              marginLeft: "8px"
+            }}>
+              AI Powered
+            </span>
+          </h3>
+          
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button 
+              onClick={() => setShowHistory(!showHistory)}
+              style={{
+                background: "none",
+                border: "1px solid #ddd",
+                borderRadius: "4px",
+                padding: "4px 8px",
+                cursor: "pointer",
+                fontSize: "12px"
+              }}
+            >
+              {showHistory ? "Hide History" : "Show History"}
+            </button>
+            
+            <button 
+              onClick={clearFields}
+              style={{
+                background: "none",
+                border: "1px solid #ddd",
+                borderRadius: "4px",
+                padding: "4px 8px",
+                cursor: "pointer",
+                fontSize: "12px"
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+        
+        {showHistory && history.length > 0 && (
+          <div style={{
+            marginBottom: "16px",
+            maxHeight: "150px",
+            overflowY: "auto",
+            border: "1px solid #eee",
+            borderRadius: "4px",
+            padding: "8px"
+          }}>
+            <h4 style={{ margin: "0 0 8px", fontSize: "14px", fontWeight: 600 }}>Recent Explanations</h4>
+            
+            {history.map((item, index) => (
+              <div 
+                key={index}
+                style={{
+                  padding: "8px",
+                  borderBottom: index < history.length - 1 ? "1px solid #eee" : "none",
+                  fontSize: "13px",
+                  cursor: "pointer"
+                }}
+                onClick={() => {
+                  setInputText(item.inputText);
+                  setExplanation(item.explanation);
+                  setLevel(item.level);
+                }}
+              >
+                <div style={{ fontWeight: 500 }}>{item.inputText.length > 50 ? item.inputText.substring(0, 50) + '...' : item.inputText}</div>
+                <div style={{ color: "#666", fontSize: "11px" }}>
+                  {explanationLevels.find(l => l.id === item.level)?.name || item.level}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        <div style={{ display: "flex", marginBottom: "16px" }}>
+          <select
+            value={level}
+            onChange={(e) => setLevel(e.target.value as any)}
+            style={{
+              width: "100%",
+              padding: "8px",
+              borderRadius: "4px",
+              border: "1px solid #ddd"
+            }}
+          >
+            {explanationLevels.map(level => (
+              <option key={level.id} value={level.id}>{level.name}</option>
+            ))}
+          </select>
+        </div>
+        
+        <textarea
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          placeholder="Enter text that you want explained"
+          style={{
+            width: "100%",
+            height: "80px",
+            padding: "8px",
+            borderRadius: "4px",
+            border: "1px solid #ddd",
+            resize: "none",
+            marginBottom: "12px"
+          }}
+        />
+        
+        <button
+          onClick={explainText}
+          disabled={!inputText.trim() || isExplaining}
+          style={{
+            padding: "8px 16px",
+            backgroundColor: "#4CAF50",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: !inputText.trim() || isExplaining ? "not-allowed" : "pointer",
+            opacity: !inputText.trim() || isExplaining ? 0.7 : 1,
+            marginBottom: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px"
+          }}
+        >
+          {isExplaining ? (
+            <>
+              <span style={{ 
+                display: "inline-block", 
+                width: "12px", 
+                height: "12px", 
+                borderRadius: "50%", 
+                border: "2px solid white",
+                borderTopColor: "transparent",
+                animation: "spin 1s linear infinite"
+              }}></span>
+              Generating Explanation...
+            </>
+          ) : (
+            "Explain This"
+          )}
+        </button>
+        
+        <div
+          style={{
+            width: "100%",
+            minHeight: "120px",
+            padding: "12px",
+            borderRadius: "4px",
+            border: "1px solid #ddd",
+            backgroundColor: "#f9f9f9",
+            whiteSpace: "pre-wrap",
+            lineHeight: "1.5"
+          }}
+        >
+          {explanation || <span style={{ color: "#999" }}>Explanation will appear here</span>}
+        </div>
+      </div>
+    </BaseCustomOverlay>
+  );
+};
+
 // Accept both the new strongly typed layout and the legacy format
 interface OverlayFactoryProps {
   overlay: {
@@ -1947,6 +3065,52 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
             />
           </div>
         );
+        
+      case "approval":
+        return <ApprovalOverlay 
+          id={id} 
+          layout={layout} 
+          style={layout.style || {}} 
+          url={layout.url || ""} 
+          zIndex={9999999 + id} 
+          onDelete={() => onDelete && onDelete(id)} 
+          onPin={(isPinned) => onPin && onPin(id, isPinned)} 
+        />;
+        
+      case "poll":
+        return <PollOverlay 
+          id={id} 
+          layout={layout} 
+          style={layout.style || {}} 
+          url={layout.url || ""} 
+          zIndex={9999999 + id} 
+          onDelete={() => onDelete && onDelete(id)} 
+          onPin={(isPinned) => onPin && onPin(id, isPinned)} 
+        />;
+        
+      case "translation":
+        console.log("Rendering translation overlay:", id, layout);
+        return <TranslationOverlay 
+          id={id} 
+          layout={layout} 
+          style={layout.style || {}} 
+          url={layout.url || ""} 
+          zIndex={9999999 + id} 
+          onDelete={() => onDelete && onDelete(id)} 
+          onPin={(isPinned) => onPin && onPin(id, isPinned)} 
+        />;
+        
+      case "explain":
+        console.log("Rendering explain overlay:", id, layout);
+        return <ExplainOverlay 
+          id={id} 
+          layout={layout} 
+          style={layout.style || {}} 
+          url={layout.url || ""} 
+          zIndex={9999999 + id} 
+          onDelete={() => onDelete && onDelete(id)} 
+          onPin={(isPinned) => onPin && onPin(id, isPinned)} 
+        />;
         
       default:
         console.warn(`Unsupported overlay type: ${layout.type}`);
