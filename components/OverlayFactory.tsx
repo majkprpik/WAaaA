@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import type { 
   OverlayLayout, 
   NoteLayout, 
@@ -3054,40 +3054,34 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
           history: layout.history || []
         });
         
-        // Handler to save translation state to database
-        const saveTranslationStateToDatabase = async (updatedState: any) => {
+        // Save translation state to database
+        const saveTranslationStateToDatabase = useCallback(async (state) => {
           try {
-            // Get current data
-            const { data: currentData, error: fetchError } = await supabase
-              .from("overlays")
-              .select("layout")
-              .eq("id", id)
-              .single();
-            
-            if (fetchError) throw fetchError;
-            
-            // Update layout with new state
-            const updatedLayout = {
-              ...currentData.layout,
-              ...updatedState
-            };
-            
-            // Save to database
             const { error } = await supabase
               .from("overlays")
-              .update({ layout: updatedLayout })
+              .update({
+                layout: {
+                  ...layout,
+                  sourceLang: state.sourceLang,
+                  targetLang: state.targetLang,
+                  sourceText: state.sourceText,
+                  translatedText: state.translatedText,
+                  detectedLanguage: state.detectedLanguage,
+                  history: state.history
+                }
+              })
               .eq("id", id);
             
-            if (error) throw error;
-            
-            console.log("Translation state saved successfully");
+            if (error) {
+              throw error;
+            }
           } catch (error) {
             console.error("Error saving translation state:", error);
           }
-        };
+        }, [id, layout]);
         
         // Handler for translating text
-        const handleTranslate = async () => {
+        const handleTranslate = useCallback(async () => {
           if (!translationState.sourceText.trim() || translationState.isTranslating) return;
           
           setTranslationState(prev => ({ ...prev, isTranslating: true }));
@@ -3103,7 +3097,7 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
             const messages = [
               {
                 role: "system",
-                content: `You are a translation assistant. Please translate the following text from ${translationState.sourceLang === "auto" ? "the detected language" : translationState.sourceLang} to ${translationState.targetLang}. Provide only the translated text without any additional explanations or notes.`
+                content: `You are a professional translator. Translate the following text from ${translationState.sourceLang === "auto" ? "the detected language" : translationState.sourceLang} to ${translationState.targetLang}. Only provide the translation, no additional commentary.`
               },
               {
                 role: "user",
@@ -3139,7 +3133,6 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
               targetLang: translationState.targetLang,
               sourceText: translationState.sourceText,
               translatedText: translatedText,
-              detectedLanguage: translationState.sourceLang === "auto" ? "Auto-detected" : null,
               timestamp: Date.now()
             };
             
@@ -3165,7 +3158,19 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
               translatedText: `Error: ${error.message || "Failed to translate"}`
             }));
           }
-        };
+        }, [translationState, saveTranslationStateToDatabase]);
+        
+        // Auto-trigger translation if autoTranslate is true
+        useEffect(() => {
+          if (layout.autoTranslate && translationState.sourceText && !translationState.isTranslating && !translationState.translatedText) {
+            // Small delay to ensure everything is loaded
+            const timer = setTimeout(() => {
+              handleTranslate();
+            }, 500);
+            
+            return () => clearTimeout(timer);
+          }
+        }, [layout.autoTranslate, translationState.sourceText, translationState.isTranslating, translationState.translatedText, handleTranslate]);
         
         return <TranslationOverlay
           id={id}
@@ -3243,40 +3248,32 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
           history: layout.history || []
         });
         
-        // Handler to save explain state to database
-        const saveExplainStateToDatabase = async (updatedState: any) => {
+        // Save explain state to database
+        const saveExplainStateToDatabase = useCallback(async (state) => {
           try {
-            // Get current data
-            const { data: currentData, error: fetchError } = await supabase
-              .from("overlays")
-              .select("layout")
-              .eq("id", id)
-              .single();
-            
-            if (fetchError) throw fetchError;
-            
-            // Update layout with new state
-            const updatedLayout = {
-              ...currentData.layout,
-              ...updatedState
-            };
-            
-            // Save to database
             const { error } = await supabase
               .from("overlays")
-              .update({ layout: updatedLayout })
+              .update({
+                layout: {
+                  ...layout,
+                  level: state.level,
+                  inputText: state.inputText,
+                  explanation: state.explanation,
+                  history: state.history
+                }
+              })
               .eq("id", id);
             
-            if (error) throw error;
-            
-            console.log("Explain state saved successfully");
+            if (error) {
+              throw error;
+            }
           } catch (error) {
             console.error("Error saving explain state:", error);
           }
-        };
+        }, [id, layout]);
         
         // Handler for explaining text
-        const handleExplain = async () => {
+        const handleExplain = useCallback(async () => {
           if (!explainState.inputText.trim() || explainState.isExplaining) return;
           
           setExplainState(prev => ({ ...prev, isExplaining: true }));
@@ -3360,7 +3357,19 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
               explanation: `Error: ${error.message || "Failed to explain"}`
             }));
           }
-        };
+        }, [explainState, saveExplainStateToDatabase]);
+        
+        // Auto-trigger explanation if autoExplain is true
+        useEffect(() => {
+          if (layout.autoExplain && explainState.inputText && !explainState.isExplaining && !explainState.explanation) {
+            // Small delay to ensure everything is loaded
+            const timer = setTimeout(() => {
+              handleExplain();
+            }, 500);
+            
+            return () => clearTimeout(timer);
+          }
+        }, [layout.autoExplain, explainState.inputText, explainState.isExplaining, explainState.explanation, handleExplain]);
         
         return <ExplainOverlay
           id={id}

@@ -179,6 +179,8 @@ export interface TranslationLayout extends BaseLayoutProps {
   translatedText?: string;
   sourceLang?: string;
   targetLang?: string;
+  detectedLanguage?: string | null;
+  translationSource?: string;
   history?: Array<{
     sourceText: string;
     translatedText: string;
@@ -186,7 +188,7 @@ export interface TranslationLayout extends BaseLayoutProps {
     targetLang: string;
     timestamp: number;
   }>;
-  apiKey?: string;
+  autoTranslate?: boolean;
 }
 
 // Explain overlay
@@ -202,6 +204,7 @@ export interface ExplainLayout extends BaseLayoutProps {
     timestamp: number;
   }>;
   apiKey?: string;
+  autoExplain?: boolean;
 }
 
 // Any other overlay type

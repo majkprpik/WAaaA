@@ -28,12 +28,14 @@ when i start with /chat always use chat overlay format
 when i start with /timer always use timer overlay format
 when i start with /search always use search overlay format
 when i start with /form always use form overlay format
-when i start with /grid always use grid overlay format
+when i start with /grid always use grid overlay format -> use data from context to populate the grid
 when i start with /approval always use approval overlay format
 when i start with /poll always use poll overlay format
 when i start with /note always use note overlay format  -> try to sumarise wverything from context added
 when i start with /button always use button overlay format
 
+
+ALWAYS FIRST LOOK TO CONTEXT DATA I SENDED WITH THIS INSTRUCTION HIS NEEDS TO BE USED TO CREATE THE OVERLAY!
 
 1. For a simple note:
 {
@@ -410,7 +412,8 @@ const PersistentAIChat: React.FC = () => {
     '/approval',
     '/poll',
     '/email',
-    '/talk'
+    '/talk',
+    '/clear'
   ];
   
   // Context panel states
@@ -504,6 +507,9 @@ const PersistentAIChat: React.FC = () => {
     // If selecting /talk, activate talk mode immediately
     if (command === '/talk') {
       setIsTalkModeActive(true);
+    } else if (command === '/clear') {
+      clearChatAndContext();
+      setInput('');
     } else {
       setIsTalkModeActive(false);
     }
@@ -804,13 +810,71 @@ const PersistentAIChat: React.FC = () => {
   };
 
   // Create a translation overlay directly
-  const createTranslationOverlay = async () => {
+  const createTranslationOverlay = async (targetLanguageInput?: string) => {
     try {
       console.log("Creating translation overlay directly");
       
       // Get position for the new overlay
       const { data } = await supabase.from("overlays").select();
       const position = calculateNextPosition(data || []);
+      
+      // Get active context to populate the overlay
+      const activeContextItems = contextItems.filter(item => item.active);
+      const contextText = activeContextItems.length > 0 
+        ? activeContextItems.map(item => item.text).join("\n\n")
+        : "";
+      
+      // Parse target language if provided
+      let targetLang = "en"; // Default to English
+      
+      if (targetLanguageInput) {
+        // Language code mapping for common languages
+        const languageMap: {[key: string]: string} = {
+          "english": "en",
+          "spanish": "es",
+          "french": "fr",
+          "german": "de",
+          "italian": "it",
+          "portuguese": "pt",
+          "russian": "ru",
+          "chinese": "zh",
+          "japanese": "ja",
+          "korean": "ko",
+          "arabic": "ar",
+          "hindi": "hi",
+          "croatian": "hr",
+          "dutch": "nl",
+          "swedish": "sv",
+          "norwegian": "no",
+          "danish": "da",
+          "finnish": "fi",
+          "greek": "el",
+          "turkish": "tr",
+          "polish": "pl",
+          "czech": "cs",
+          "hungarian": "hu",
+          "romanian": "ro",
+          "bulgarian": "bg",
+          "serbian": "sr",
+          "ukrainian": "uk",
+          "hebrew": "he",
+          "thai": "th",
+          "vietnamese": "vi",
+          "indonesian": "id",
+          "malay": "ms"
+        };
+        
+        // Normalize input to lowercase for matching
+        const normInput = targetLanguageInput.toLowerCase().trim();
+        
+        // Check if directly mapped or if we can find in language map
+        if (normInput.length === 2) {
+          // Assuming it's already a language code
+          targetLang = normInput;
+        } else if (languageMap[normInput]) {
+          targetLang = languageMap[normInput];
+        }
+      }
       
       // Create the layout
       const translationLayout = {
@@ -823,12 +887,13 @@ const PersistentAIChat: React.FC = () => {
           borderRadius: "8px",
           padding: "16px"
         },
-        sourceText: "",
+        sourceText: contextText,
         translatedText: "",
         sourceLang: "auto",
-        targetLang: "en",
+        targetLang: targetLang,
         history: [],
-        url: window.location.href
+        url: window.location.href,
+        autoTranslate: contextText.length > 0 // Auto-translate if we have context
       };
       
       // Create the overlay
@@ -851,6 +916,12 @@ const PersistentAIChat: React.FC = () => {
       const { data } = await supabase.from("overlays").select();
       const position = calculateNextPosition(data || []);
       
+      // Get active context to populate the overlay
+      const activeContextItems = contextItems.filter(item => item.active);
+      const contextText = activeContextItems.length > 0 
+        ? activeContextItems.map(item => item.text).join("\n\n")
+        : "";
+      
       // Create the layout
       const explainLayout = {
         type: "explain",
@@ -862,11 +933,12 @@ const PersistentAIChat: React.FC = () => {
           borderRadius: "8px",
           padding: "16px"
         },
-        inputText: "",
+        inputText: contextText,
         explanation: "",
         level: "simple",
         history: [],
-        url: window.location.href
+        url: window.location.href,
+        autoExplain: contextText.length > 0 // Auto-explain if we have context
       };
       
       // Create the overlay
@@ -888,6 +960,129 @@ const PersistentAIChat: React.FC = () => {
     let processedInput = input.trim();
     const isTalkMode = processedInput.startsWith('/talk');
     
+    // Handle clear command
+    if (processedInput.startsWith('/clear')) {
+      clearChatAndContext();
+      setInput("");
+      return;
+    }
+    
+    // Handle explain command directly
+    if (processedInput.startsWith('/explain')) {
+      setIsLoading(true);
+      try {
+        const success = await createExplainOverlay();
+        if (success) {
+          setMessages([
+            ...messages,
+            { 
+              role: "user", 
+              content: processedInput,
+              timestamp: Date.now()
+            },
+            {
+              role: "assistant",
+              content: "✅ Explanation overlay created successfully! The overlay has been populated with your active context data.",
+              timestamp: Date.now() + 1
+            }
+          ]);
+        } else {
+          setMessages([
+            ...messages,
+            { 
+              role: "user", 
+              content: processedInput,
+              timestamp: Date.now()
+            },
+            {
+              role: "assistant",
+              content: "❌ Failed to create explanation overlay.",
+              timestamp: Date.now() + 1
+            }
+          ]);
+        }
+      } catch (error) {
+        console.error("Error creating explain overlay:", error);
+        setMessages([
+          ...messages,
+          { 
+            role: "user", 
+            content: processedInput,
+            timestamp: Date.now()
+          },
+          {
+            role: "assistant",
+            content: `❌ Error creating explanation overlay: ${error.message || "Unknown error"}`,
+            timestamp: Date.now() + 1
+          }
+        ]);
+      } finally {
+        setIsLoading(false);
+        setInput("");
+      }
+      return;
+    }
+    
+    // Handle translate command directly
+    if (processedInput.startsWith('/translate')) {
+      setIsLoading(true);
+      try {
+        // Extract the target language from the command if present
+        // Format: "/translate language"
+        const languageInput = processedInput.substring(10).trim();
+        
+        const success = await createTranslationOverlay(languageInput);
+        if (success) {
+          setMessages([
+            ...messages,
+            { 
+              role: "user", 
+              content: processedInput,
+              timestamp: Date.now()
+            },
+            {
+              role: "assistant",
+              content: `✅ Translation overlay created successfully! The overlay has been populated with your active context data${languageInput ? ` and set to translate to ${languageInput}` : ''}.`,
+              timestamp: Date.now() + 1
+            }
+          ]);
+        } else {
+          setMessages([
+            ...messages,
+            { 
+              role: "user", 
+              content: processedInput,
+              timestamp: Date.now()
+            },
+            {
+              role: "assistant",
+              content: "❌ Failed to create translation overlay.",
+              timestamp: Date.now() + 1
+            }
+          ]);
+        }
+      } catch (error) {
+        console.error("Error creating translation overlay:", error);
+        setMessages([
+          ...messages,
+          { 
+            role: "user", 
+            content: processedInput,
+            timestamp: Date.now()
+          },
+          {
+            role: "assistant",
+            content: `❌ Error creating translation overlay: ${error.message || "Unknown error"}`,
+            timestamp: Date.now() + 1
+          }
+        ]);
+      } finally {
+        setIsLoading(false);
+        setInput("");
+      }
+      return;
+    }
+    
     if (isTalkMode) {
       // Remove the /talk prefix and any spaces that follow
       processedInput = processedInput.substring(5).trim();
@@ -902,12 +1097,29 @@ const PersistentAIChat: React.FC = () => {
       setIsTalkModeActive(true);
     }
     
+    let newProcessedInput = processedInput;
+    // Special handling for /grid command
+    if (processedInput.startsWith('/grid') && !isTalkMode) {
+      // Extract user's grid request - everything after /grid
+      const gridRequest = processedInput.substring(5).trim();
+      
+      // Get active context items to use as data for the grid
+      const activeContextItems = contextItems.filter(item => item.active);
+      const contextData = activeContextItems.length > 0 
+        ? "USE THIS CONTEXT DATA TO POPULATE THE GRID: " + 
+          activeContextItems.map(item => item.text).join("\n\n")
+        : "";
+      
+      // Transform the input to specifically request grid overlay with context data
+      newProcessedInput = `/grid ${gridRequest}\n\n${contextData}`;
+    }
+    
     // Add user message
     const newMessages = [
       ...messages, 
       { 
         role: "user", 
-        content: processedInput,
+        content: newProcessedInput,
         timestamp: Date.now()
       }
     ];
@@ -1131,6 +1343,22 @@ const PersistentAIChat: React.FC = () => {
         inputRef.current?.focus();
       }, 10);
     }
+  };
+
+  // Clear chat history and context items
+  const clearChatAndContext = () => {
+    // Clear chat messages except for the initial welcome message
+    setMessages([
+      {
+        role: "assistant",
+        content: "Chat history and context cleared. What would you like to do next?",
+        timestamp: Date.now()
+      }
+    ]);
+    
+    // Clear context items
+    setContextItems([]);
+    localStorage.setItem('contextItems', JSON.stringify([]));
   };
 
   // Always show both buttons and render appropriate panels
@@ -1640,12 +1868,13 @@ const PersistentAIChat: React.FC = () => {
                       {command === '/button' && "Create a button overlay"}
                       {command === '/timer' && "Create a timer overlay"}
                       {command === '/search' && "Create a search overlay"}
-                      {command === '/form' && "Create a form overlay"}
-                      {command === '/grid' && "Create a data grid overlay"}
-                      {command === '/approval' && "Create an approval overlay"}
-                      {command === '/poll' && "Create a poll overlay"}
-                      {command === '/email' && "Create an email overlay"}
+                      {command === '/form' && "Create a form overlay from context data"}
+                      {command === '/grid' && "Create a data grid overlay from context data"}
+                      {command === '/approval' && "Create an approval overlay from context data"}
+                      {command === '/poll' && "Create a poll overlay from context data"}
+                      {command === '/email' && "Create an email overlay from context data"}
                       {command === '/talk' && "Just have a regular chat conversation"}
+                      {command === '/clear' && "Clear chat history and context items"}
                     </span>
                   </div>
                 ))}
