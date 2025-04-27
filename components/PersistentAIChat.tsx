@@ -409,7 +409,8 @@ const PersistentAIChat: React.FC = () => {
     '/grid',
     '/approval',
     '/poll',
-    '/email'
+    '/email',
+    '/talk'
   ];
   
   // Context panel states
@@ -418,6 +419,9 @@ const PersistentAIChat: React.FC = () => {
   const [contextInput, setContextInput] = useState("");
   const [contextItems, setContextItems] = useState<Array<{id: string, text: string, url: string, title: string, timestamp: number, expanded?: boolean, active?: boolean}>>([]);
   const contextInputRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Track talk mode
+  const [isTalkModeActive, setIsTalkModeActive] = useState(false);
 
   // Scroll to bottom of messages on update
   useEffect(() => {
@@ -496,6 +500,14 @@ const PersistentAIChat: React.FC = () => {
   const selectCommand = (command: string) => {
     setInput(command + ' ');
     setShowCommands(false);
+    
+    // If selecting /talk, activate talk mode immediately
+    if (command === '/talk') {
+      setIsTalkModeActive(true);
+    } else {
+      setIsTalkModeActive(false);
+    }
+    
     inputRef.current?.focus();
   };
 
@@ -565,12 +577,13 @@ const PersistentAIChat: React.FC = () => {
   }, [isMinimized, isVisible]);
 
   // Call OpenAI API
-  const callOpenAI = async (messages: any[]) => {
+  const callOpenAI = async (messages: any[], isTalkModeParam?: boolean) => {
     try {
       const apiKey = getOpenAIApiKey();
       
-      if (!apiKey || apiKey === 'YOUR_OPENAI_API_KEY_HERE') {
-        throw new Error("API key is required");
+      if (!apiKey) {
+        console.error("OpenAI API key not found");
+        return "Error: OpenAI API key not found";
       }
       
       // Format messages for OpenAI API
@@ -585,8 +598,13 @@ const PersistentAIChat: React.FC = () => {
       // System messages to add
       const systemMessages = [];
       
-      // If overlay instructions mode is active, add the format instructions
-      if (overlayInstructions) {
+      // Determine if we're in talk mode - either from parameter or by checking input
+      const isTalkMode = isTalkModeParam !== undefined 
+        ? isTalkModeParam 
+        : false; // We already processed the input in handleSendMessage
+      
+      // If overlay instructions mode is active and we're not in talk mode, add the format instructions
+      if (overlayInstructions && !isTalkMode) {
         systemMessages.push({
           role: "system",
           content: OVERLAY_FORMAT_PROMPT
@@ -628,6 +646,63 @@ const PersistentAIChat: React.FC = () => {
     } catch (error) {
       console.error("Error calling OpenAI:", error);
       return `Error: ${error.message || "Failed to call OpenAI API"}`;
+    }
+  };
+
+  // Function to get a short title summary from text using ChatGPT
+  const getSummaryFromText = async (text: string): Promise<string> => {
+    try {
+      const apiKey = getOpenAIApiKey();
+      
+      if (!apiKey) {
+        console.error("OpenAI API key not found");
+        return text.split(/\s+/)[0] || "Context"; // Fallback to first word
+      }
+      
+      // Prepare message for OpenAI API
+      const messages = [
+        {
+          role: "system",
+          content: "You are a helpful assistant that generates short, concise titles (2-4 words) that summarize the main topic or content of a text. Respond with just the title, no additional text."
+        },
+        {
+          role: "user",
+          content: `Generate a short title (2-4 words) for this text: "${text}"`
+        }
+      ];
+      
+      // Call the OpenAI API
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: "gpt-3.5-turbo",
+          messages: messages,
+          temperature: 0.7,
+          max_tokens: 20
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || "Error calling OpenAI API");
+      }
+      
+      const data = await response.json();
+      const summary = data.choices[0].message.content.trim();
+      
+      // If summary is empty or too long, fallback to first word
+      if (!summary || summary.length > 30) {
+        return text.split(/\s+/)[0] || "Context";
+      }
+      
+      return summary;
+    } catch (error) {
+      console.error("Error getting summary:", error);
+      return text.split(/\s+/)[0] || "Context"; // Fallback to first word
     }
   };
 
@@ -809,12 +884,30 @@ const PersistentAIChat: React.FC = () => {
   const handleSendMessage = async () => {
     if (!input.trim() || isLoading) return;
     
+    // Process input - remove /talk prefix if present
+    let processedInput = input.trim();
+    const isTalkMode = processedInput.startsWith('/talk');
+    
+    if (isTalkMode) {
+      // Remove the /talk prefix and any spaces that follow
+      processedInput = processedInput.substring(5).trim();
+      
+      // If there's nothing left after removing /talk, don't send
+      if (!processedInput) {
+        setInput("");
+        return;
+      }
+      
+      // Set talk mode as active
+      setIsTalkModeActive(true);
+    }
+    
     // Add user message
     const newMessages = [
       ...messages, 
       { 
         role: "user", 
-        content: input,
+        content: processedInput,
         timestamp: Date.now()
       }
     ];
@@ -826,7 +919,7 @@ const PersistentAIChat: React.FC = () => {
     
     try {
       // Call OpenAI
-      const aiResponse = await callOpenAI(newMessages);
+      const aiResponse = await callOpenAI(newMessages, isTalkMode || isTalkModeActive);
       
       // Add AI response to messages
       const updatedMessages = [
@@ -841,7 +934,7 @@ const PersistentAIChat: React.FC = () => {
       setMessages(updatedMessages);
       
       // Check if we're in overlay mode and try to parse the response
-      if (overlayInstructions) {
+      if (overlayInstructions && !isTalkMode && !isTalkModeActive) {
         const isOverlay = await tryParseOverlay(aiResponse);
         
         // If successfully created an overlay, add confirmation message
@@ -886,6 +979,7 @@ const PersistentAIChat: React.FC = () => {
       // Wait for the fade-out transition to complete before hiding
       setTimeout(() => {
         setIsMinimized(true);
+        setIsTalkModeActive(false); // Reset talk mode when minimizing
       }, 300); // Match the transition duration
     }
   };
@@ -921,28 +1015,58 @@ const PersistentAIChat: React.FC = () => {
   };
 
   // Add a new context item
-  const addContextItem = () => {
+  const addContextItem = async () => {
     if (!contextInput.trim()) return;
     
     const currentUrl = window.location.href;
-    const words = contextInput.trim().split(/\s+/);
-    const title = words[0] || "Context";
     
-    const newItem = {
-      id: Date.now().toString(),
-      text: contextInput.trim(),
-      url: currentUrl,
-      title: title,
-      timestamp: Date.now(),
-      active: true // New items are active by default
-    };
+    // Set loading state if needed
+    setIsLoading(true);
     
-    setContextItems([newItem, ...contextItems]);
-    setContextInput("");
-    
-    // Save to local storage
-    const updatedItems = [newItem, ...contextItems];
-    localStorage.setItem('contextItems', JSON.stringify(updatedItems));
+    try {
+      // Get a summary from ChatGPT to use as title
+      const title = await getSummaryFromText(contextInput.trim());
+      
+      const newItem = {
+        id: Date.now().toString(),
+        text: contextInput.trim(),
+        url: currentUrl,
+        title: title,
+        timestamp: Date.now(),
+        active: true // New items are active by default
+      };
+      
+      setContextItems([newItem, ...contextItems]);
+      setContextInput("");
+      
+      // Save to local storage
+      const updatedItems = [newItem, ...contextItems];
+      localStorage.setItem('contextItems', JSON.stringify(updatedItems));
+    } catch (error) {
+      console.error("Error adding context item:", error);
+      
+      // Fallback to using first word as title if summary fails
+      const words = contextInput.trim().split(/\s+/);
+      const title = words[0] || "Context";
+      
+      const newItem = {
+        id: Date.now().toString(),
+        text: contextInput.trim(),
+        url: currentUrl,
+        title: title,
+        timestamp: Date.now(),
+        active: true // New items are active by default
+      };
+      
+      setContextItems([newItem, ...contextItems]);
+      setContextInput("");
+      
+      // Save to local storage
+      const updatedItems = [newItem, ...contextItems];
+      localStorage.setItem('contextItems', JSON.stringify(updatedItems));
+    } finally {
+      setIsLoading(false);
+    }
   };
   
   // Remove a context item
@@ -1260,6 +1384,7 @@ const PersistentAIChat: React.FC = () => {
               onChange={(e) => setContextInput(e.target.value)}
               onKeyPress={(e) => e.key === "Enter" && addContextItem()}
               placeholder="Add text to your context library..."
+              disabled={isLoading}
               style={{
                 flex: 1,
                 padding: "10px 16px",
@@ -1267,28 +1392,27 @@ const PersistentAIChat: React.FC = () => {
                 border: "1px solid #e0e0e0",
                 outline: "none",
                 fontSize: "14px",
-                backgroundColor: "#f9f9f9"
+                backgroundColor: isLoading ? "#f0f0f0" : "white"
               }}
             />
+            
             <button
               onClick={addContextItem}
-              disabled={!contextInput.trim()}
+              disabled={isLoading || !contextInput.trim()}
               style={{
-                backgroundColor: contextInput.trim() ? "#FF9800" : "#ccc",
+                padding: "8px 12px",
+                backgroundColor: isLoading ? "#ccc" : "#4285f4",
                 color: "white",
                 border: "none",
-                borderRadius: "50%",
-                width: "36px",
-                height: "36px",
+                borderRadius: "20px",
+                cursor: isLoading ? "not-allowed" : "pointer",
+                fontSize: "14px",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                cursor: contextInput.trim() ? "pointer" : "default",
-                opacity: contextInput.trim() ? 1 : 0.6,
-                padding: 0
+                justifyContent: "center"
               }}
             >
-              <Plus size={18} />
+              {isLoading ? "Adding..." : "Add"}
             </button>
           </div>
         </div>
@@ -1381,6 +1505,25 @@ const PersistentAIChat: React.FC = () => {
           >
             <Minus size={16} />
           </button>
+          
+          {/* Chat mode indicator */}
+          {isTalkModeActive && (
+            <div style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              backgroundColor: "#2196f3",
+              color: "white",
+              padding: "8px 16px",
+              fontSize: "14px",
+              fontWeight: "500",
+              textAlign: "center",
+              zIndex: 1
+            }}>
+              Conversation Mode - No Overlays
+            </div>
+          )}
 
           {/* Messages area */}
           <div
@@ -1388,7 +1531,7 @@ const PersistentAIChat: React.FC = () => {
               flex: 1,
               overflowY: "auto",
               padding: "20px",
-              paddingTop: "40px",
+              paddingTop: isTalkModeActive ? "50px" : "40px",
               display: "flex",
               flexDirection: "column",
               gap: "12px",
@@ -1447,7 +1590,7 @@ const PersistentAIChat: React.FC = () => {
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleInputKeyDown}
-              placeholder="Ask for help or create an overlay..."
+              placeholder={isTalkModeActive ? "Chat conversation mode (no overlays)..." : "Ask for help or create an overlay..."}
               disabled={isLoading}
               style={{
                 flex: 1,
@@ -1456,7 +1599,7 @@ const PersistentAIChat: React.FC = () => {
                 border: "1px solid #e0e0e0",
                 outline: "none",
                 fontSize: "14px",
-                backgroundColor: "#f9f9f9"
+                backgroundColor: isTalkModeActive ? "#e6f7ff" : "#f9f9f9"
               }}
             />
             
@@ -1502,6 +1645,7 @@ const PersistentAIChat: React.FC = () => {
                       {command === '/approval' && "Create an approval overlay"}
                       {command === '/poll' && "Create a poll overlay"}
                       {command === '/email' && "Create an email overlay"}
+                      {command === '/talk' && "Just have a regular chat conversation"}
                     </span>
                   </div>
                 ))}

@@ -3040,6 +3040,133 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
         const translationStyle = layout.style || {};
         const translationUrl = layout.url || "";
         const translationZIndex = 9999999 + id;
+        
+        // State for the translation overlay
+        const [translationState, setTranslationState] = useState({
+          showHistory: false,
+          sourceLang: layout.sourceLang || "auto",
+          targetLang: layout.targetLang || "en",
+          sourceText: layout.sourceText || "",
+          translatedText: layout.translatedText || "",
+          isTranslating: false,
+          detectedLanguage: layout.detectedLanguage || null,
+          translationSource: layout.translationSource || "ai",
+          history: layout.history || []
+        });
+        
+        // Handler to save translation state to database
+        const saveTranslationStateToDatabase = async (updatedState: any) => {
+          try {
+            // Get current data
+            const { data: currentData, error: fetchError } = await supabase
+              .from("overlays")
+              .select("layout")
+              .eq("id", id)
+              .single();
+            
+            if (fetchError) throw fetchError;
+            
+            // Update layout with new state
+            const updatedLayout = {
+              ...currentData.layout,
+              ...updatedState
+            };
+            
+            // Save to database
+            const { error } = await supabase
+              .from("overlays")
+              .update({ layout: updatedLayout })
+              .eq("id", id);
+            
+            if (error) throw error;
+            
+            console.log("Translation state saved successfully");
+          } catch (error) {
+            console.error("Error saving translation state:", error);
+          }
+        };
+        
+        // Handler for translating text
+        const handleTranslate = async () => {
+          if (!translationState.sourceText.trim() || translationState.isTranslating) return;
+          
+          setTranslationState(prev => ({ ...prev, isTranslating: true }));
+          
+          try {
+            const apiKey = getOpenAIApiKey();
+            
+            if (!apiKey) {
+              throw new Error("OpenAI API key not found");
+            }
+            
+            // Prepare the message for GPT
+            const messages = [
+              {
+                role: "system",
+                content: `You are a translation assistant. Please translate the following text from ${translationState.sourceLang === "auto" ? "the detected language" : translationState.sourceLang} to ${translationState.targetLang}. Provide only the translated text without any additional explanations or notes.`
+              },
+              {
+                role: "user",
+                content: translationState.sourceText
+              }
+            ];
+            
+            // Call the OpenAI API
+            const response = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+              },
+              body: JSON.stringify({
+                model: "gpt-3.5-turbo",
+                messages: messages,
+                temperature: 0.3
+              })
+            });
+            
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error?.message || "Error calling OpenAI API");
+            }
+            
+            const data = await response.json();
+            const translatedText = data.choices[0].message.content.trim();
+            
+            // Add to history
+            const newHistoryItem = {
+              sourceLang: translationState.sourceLang,
+              targetLang: translationState.targetLang,
+              sourceText: translationState.sourceText,
+              translatedText: translatedText,
+              detectedLanguage: translationState.sourceLang === "auto" ? "Auto-detected" : null,
+              timestamp: Date.now()
+            };
+            
+            const updatedHistory = [newHistoryItem, ...translationState.history].slice(0, 10); // Keep last 10 items
+            
+            const newState = {
+              ...translationState,
+              translatedText,
+              isTranslating: false,
+              history: updatedHistory
+            };
+            
+            setTranslationState(newState);
+            
+            // Save to database
+            await saveTranslationStateToDatabase(newState);
+            
+          } catch (error) {
+            console.error("Translation error:", error);
+            setTranslationState(prev => ({ 
+              ...prev, 
+              isTranslating: false,
+              translatedText: `Error: ${error.message || "Failed to translate"}`
+            }));
+          }
+        };
+        
         return <TranslationOverlay
           id={id}
           layout={layout}
@@ -3048,22 +3175,56 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
           zIndex={translationZIndex}
           onDelete={() => onDelete && onDelete(id)} 
           onPin={(isPinned) => onPin && onPin(id, isPinned)} 
-          onToggleHistory={() => {}}
-          onClearFields={() => {}}
-          onSourceLangChange={(value) => {}}
-          onSwitchLanguages={() => {}}
-          onTargetLangChange={(value) => {}}
-          onSourceTextChange={(value) => {}}
-          onTranslate={() => {}}
-          showHistory={false}
-          history={layout.history || []}
-          sourceLang={layout.sourceLang || "auto"}
-          targetLang={layout.targetLang || "en"}
-          sourceText={layout.sourceText || ""}
-          translatedText={layout.translatedText || ""}
-          isTranslating={false}
-          detectedLanguage={layout.detectedLanguage || null}
-          translationSource={layout.translationSource || "mock"}
+          onToggleHistory={() => {
+            setTranslationState(prev => ({ ...prev, showHistory: !prev.showHistory }));
+          }}
+          onClearFields={() => {
+            const clearedState = {
+              ...translationState,
+              sourceText: "",
+              translatedText: "",
+              detectedLanguage: null
+            };
+            setTranslationState(clearedState);
+            saveTranslationStateToDatabase(clearedState);
+          }}
+          onSourceLangChange={(value) => {
+            const updatedState = { ...translationState, sourceLang: value };
+            setTranslationState(updatedState);
+            saveTranslationStateToDatabase(updatedState);
+          }}
+          onSwitchLanguages={() => {
+            // Don't switch if auto-detect is selected
+            if (translationState.sourceLang === "auto") return;
+            
+            const updatedState = {
+              ...translationState,
+              sourceLang: translationState.targetLang,
+              targetLang: translationState.sourceLang,
+              sourceText: translationState.translatedText,
+              translatedText: translationState.sourceText
+            };
+            setTranslationState(updatedState);
+            saveTranslationStateToDatabase(updatedState);
+          }}
+          onTargetLangChange={(value) => {
+            const updatedState = { ...translationState, targetLang: value };
+            setTranslationState(updatedState);
+            saveTranslationStateToDatabase(updatedState);
+          }}
+          onSourceTextChange={(value) => {
+            setTranslationState(prev => ({ ...prev, sourceText: value }));
+          }}
+          onTranslate={handleTranslate}
+          showHistory={translationState.showHistory}
+          history={translationState.history}
+          sourceLang={translationState.sourceLang}
+          targetLang={translationState.targetLang}
+          sourceText={translationState.sourceText}
+          translatedText={translationState.translatedText}
+          isTranslating={translationState.isTranslating}
+          detectedLanguage={translationState.detectedLanguage}
+          translationSource={translationState.translationSource}
         />;
         
       case "explain":
@@ -3071,6 +3232,136 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
         const explainStyle = layout.style || {};
         const explainUrl = layout.url || "";
         const explainZIndex = 9999999 + id;
+        
+        // State for the explain overlay
+        const [explainState, setExplainState] = useState({
+          showHistory: false,
+          level: layout.level || "simple",
+          inputText: layout.inputText || "",
+          explanation: layout.explanation || "",
+          isExplaining: false,
+          history: layout.history || []
+        });
+        
+        // Handler to save explain state to database
+        const saveExplainStateToDatabase = async (updatedState: any) => {
+          try {
+            // Get current data
+            const { data: currentData, error: fetchError } = await supabase
+              .from("overlays")
+              .select("layout")
+              .eq("id", id)
+              .single();
+            
+            if (fetchError) throw fetchError;
+            
+            // Update layout with new state
+            const updatedLayout = {
+              ...currentData.layout,
+              ...updatedState
+            };
+            
+            // Save to database
+            const { error } = await supabase
+              .from("overlays")
+              .update({ layout: updatedLayout })
+              .eq("id", id);
+            
+            if (error) throw error;
+            
+            console.log("Explain state saved successfully");
+          } catch (error) {
+            console.error("Error saving explain state:", error);
+          }
+        };
+        
+        // Handler for explaining text
+        const handleExplain = async () => {
+          if (!explainState.inputText.trim() || explainState.isExplaining) return;
+          
+          setExplainState(prev => ({ ...prev, isExplaining: true }));
+          
+          try {
+            const apiKey = getOpenAIApiKey();
+            
+            if (!apiKey) {
+              throw new Error("OpenAI API key not found");
+            }
+            
+            // Get prompt based on level
+            let prompt = "Explain this in simple terms that a 5-year-old would understand:";
+            if (explainState.level === "detailed") {
+              prompt = "Explain this in detail with clear examples:";
+            } else if (explainState.level === "technical") {
+              prompt = "Provide a technical explanation with proper terminology:";
+            }
+            
+            // Prepare the message for GPT
+            const messages = [
+              {
+                role: "system",
+                content: `You are an educational assistant that explains concepts clearly. ${prompt}`
+              },
+              {
+                role: "user",
+                content: explainState.inputText
+              }
+            ];
+            
+            // Call the OpenAI API
+            const response = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+              },
+              body: JSON.stringify({
+                model: "gpt-3.5-turbo",
+                messages: messages,
+                temperature: 0.7
+              })
+            });
+            
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error?.message || "Error calling OpenAI API");
+            }
+            
+            const data = await response.json();
+            const explanation = data.choices[0].message.content.trim();
+            
+            // Add to history
+            const newHistoryItem = {
+              level: explainState.level,
+              inputText: explainState.inputText,
+              explanation: explanation,
+              timestamp: Date.now()
+            };
+            
+            const updatedHistory = [newHistoryItem, ...explainState.history].slice(0, 10); // Keep last 10 items
+            
+            const newState = {
+              ...explainState,
+              explanation,
+              isExplaining: false,
+              history: updatedHistory
+            };
+            
+            setExplainState(newState);
+            
+            // Save to database
+            await saveExplainStateToDatabase(newState);
+            
+          } catch (error) {
+            console.error("Explanation error:", error);
+            setExplainState(prev => ({ 
+              ...prev, 
+              isExplaining: false,
+              explanation: `Error: ${error.message || "Failed to explain"}`
+            }));
+          }
+        };
+        
         return <ExplainOverlay
           id={id}
           layout={layout}
@@ -3079,17 +3370,33 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
           zIndex={explainZIndex}
           onDelete={() => onDelete && onDelete(id)} 
           onPin={(isPinned) => onPin && onPin(id, isPinned)} 
-          onToggleHistory={() => {}}
-          onClearFields={() => {}}
-          onLevelChange={(value) => {}}
-          onInputTextChange={(value) => {}}
-          onExplain={() => {}}
-          showHistory={false}
-          history={layout.history || []}
-          level={layout.level || "simple"}
-          inputText={layout.inputText || ""}
-          explanation={layout.explanation || ""}
-          isExplaining={false}
+          onToggleHistory={() => {
+            setExplainState(prev => ({ ...prev, showHistory: !prev.showHistory }));
+          }}
+          onClearFields={() => {
+            const clearedState = {
+              ...explainState,
+              inputText: "",
+              explanation: ""
+            };
+            setExplainState(clearedState);
+            saveExplainStateToDatabase(clearedState);
+          }}
+          onLevelChange={(value) => {
+            const updatedState = { ...explainState, level: value };
+            setExplainState(updatedState);
+            saveExplainStateToDatabase(updatedState);
+          }}
+          onInputTextChange={(value) => {
+            setExplainState(prev => ({ ...prev, inputText: value }));
+          }}
+          onExplain={handleExplain}
+          showHistory={explainState.showHistory}
+          history={explainState.history}
+          level={explainState.level}
+          inputText={explainState.inputText}
+          explanation={explainState.explanation}
+          isExplaining={explainState.isExplaining}
         />;
         
       default:
