@@ -14,7 +14,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getOpenAIApiKey, saveOpenAIApiKey } from "./ApiKeyConfig";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Copy, SendHorizontal, User } from "lucide-react";
+import { Copy, SendHorizontal, User, Trash2, Edit, Plus, X, Check, ChevronDown, ChevronUp, ArrowUpDown } from "lucide-react";
 
 // const SUPABASE_URL = "http://127.0.0.1:54321"
 // const SUPABASE_ANON_KEY =
@@ -1304,7 +1304,7 @@ const ChatAiOverlay: React.FC<any> = (props) => {
               maxWidth: "80%"
             }}
           >
-            <i>Thinking...</i>
+            <i>Oblikujem...</i>
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -2836,6 +2836,240 @@ const ExplainOverlay: React.FC<any> = (props) => (
   </BaseCustomOverlay>
 );
 
+// TodoList Overlay component
+const TodoListOverlay: React.FC<any> = (props) => {
+  // Sort tasks based on completion and priority
+  const sortedTasks = [...props.tasks].sort((a, b) => {
+    // First sort by completion status
+    if (a.completed !== b.completed) {
+      return a.completed ? 1 : -1;
+    }
+    
+    // Then sort by priority (high → medium → low)
+    const priorityOrder = { high: 0, medium: 1, low: 2, undefined: 3 };
+    const aPriority = a.priority || 'undefined';
+    const bPriority = b.priority || 'undefined';
+    
+    return priorityOrder[aPriority] - priorityOrder[bPriority];
+  });
+  
+  // Filter tasks based on showCompleted setting
+  const displayedTasks = props.showCompleted 
+    ? sortedTasks 
+    : sortedTasks.filter(task => !task.completed);
+  
+  return (
+    <BaseCustomOverlay {...props}>
+      <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+        <div style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "16px"
+        }}>
+          <h3 style={{ 
+            margin: 0, 
+            fontSize: "18px",
+            fontWeight: "bold" 
+          }}>
+            {props.title || "Todo List"}
+          </h3>
+          
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              onClick={() => props.onToggleShowCompleted?.()}
+              style={{
+                backgroundColor: "#f0f0f0",
+                border: "none",
+                borderRadius: "4px",
+                padding: "6px 10px",
+                fontSize: "12px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px"
+              }}
+              title={props.showCompleted ? "Hide completed tasks" : "Show completed tasks"}
+            >
+              {props.showCompleted ? "Hide Completed" : "Show Completed"}
+            </button>
+          </div>
+        </div>
+        
+        {/* Tasks list */}
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "8px",
+          marginBottom: "16px",
+          maxHeight: "300px",
+          overflowY: "auto",
+          padding: "0 4px"
+        }}>
+          {displayedTasks.length === 0 ? (
+            <div style={{
+              padding: "20px",
+              textAlign: "center",
+              color: "#888",
+              fontStyle: "italic"
+            }}>
+              No tasks to display
+            </div>
+          ) : (
+            displayedTasks.map(task => (
+              <div key={task.id} style={{
+                display: "flex",
+                alignItems: "flex-start",
+                padding: "10px",
+                backgroundColor: "#f9f9f9",
+                borderRadius: "6px",
+                borderLeft: task.priority ? `4px solid ${
+                  task.priority === "high" ? "#e74c3c" : 
+                  task.priority === "medium" ? "#f39c12" : "#3498db"
+                }` : "4px solid transparent"
+              }}>
+                {/* Checkbox */}
+                <div 
+                  onClick={() => props.onToggleTask?.(task.id)}
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    borderRadius: "4px",
+                    border: "2px solid #ddd",
+                    backgroundColor: task.completed ? "#4CAF50" : "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    color: "white",
+                    marginRight: "10px",
+                    marginTop: "2px",
+                    flexShrink: 0
+                  }}
+                >
+                  {task.completed && <Check size={14} />}
+                </div>
+                
+                {/* Task content */}
+                <div style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "4px"
+                }}>
+                  <div style={{
+                    textDecoration: task.completed ? "line-through" : "none",
+                    color: task.completed ? "#888" : "#333",
+                    wordBreak: "break-word"
+                  }}>
+                    {task.text}
+                  </div>
+                  
+                  {/* Task metadata */}
+                  <div style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "6px",
+                    fontSize: "12px"
+                  }}>
+                    {task.dueDate && (
+                      <div style={{
+                        backgroundColor: "#e8f4fd",
+                        color: "#0366d6",
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px"
+                      }}>
+                        Due: {task.dueDate}
+                      </div>
+                    )}
+                    
+                    {task.tags?.map(tag => (
+                      <div key={tag} style={{
+                        backgroundColor: "#f3f3f3",
+                        color: "#666",
+                        padding: "2px 6px",
+                        borderRadius: "4px"
+                      }}>
+                        #{tag}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Delete button */}
+                {props.allowDeleteTask && (
+                  <button
+                    onClick={() => props.onDeleteTask?.(task.id)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "#cc0000",
+                      cursor: "pointer",
+                      padding: "4px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      opacity: 0.5,
+                      transition: "opacity 0.2s"
+                    }}
+                    title="Delete task"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+        
+        {/* Add task input */}
+        {props.allowAddTask && (
+          <div style={{
+            display: "flex",
+            gap: "8px",
+            marginTop: "8px"
+          }}>
+            <input
+              value={props.newTaskText || ""}
+              onChange={(e) => props.onNewTaskTextChange?.(e.target.value)}
+              placeholder="Add a new task..."
+              style={{
+                flex: 1,
+                padding: "10px",
+                borderRadius: "4px",
+                border: "1px solid #ddd",
+                outline: "none"
+              }}
+              onKeyDown={(e) => e.key === "Enter" && props.onAddTask?.()}
+            />
+            
+            <button
+              onClick={() => props.onAddTask?.()}
+              disabled={!props.newTaskText?.trim()}
+              style={{
+                backgroundColor: !props.newTaskText?.trim() ? "#ddd" : "#4CAF50",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                padding: "0 12px",
+                cursor: !props.newTaskText?.trim() ? "default" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}
+            >
+              <Plus size={20} />
+            </button>
+          </div>
+        )}
+      </div>
+    </BaseCustomOverlay>
+  );
+};
+
 // Accept both the new strongly typed layout and the legacy format
 interface OverlayFactoryProps {
   overlay: {
@@ -3406,6 +3640,131 @@ const OverlayFactory: React.FC<OverlayFactoryProps> = ({ overlay, onDelete, onPi
           inputText={explainState.inputText}
           explanation={explainState.explanation}
           isExplaining={explainState.isExplaining}
+        />;
+        
+      case "todolist":
+        console.log("Rendering todo list overlay with props", layout);
+        const todoListStyle = layout.style || {};
+        const todoListUrl = layout.url || "";
+        const todoListZIndex = 9999999 + id;
+        
+        // State for the todo list overlay
+        const [todoListState, setTodoListState] = useState({
+          title: layout.title || "Todo List",
+          tasks: layout.tasks || [],
+          showCompleted: layout.showCompleted !== undefined ? layout.showCompleted : true,
+          allowAddTask: layout.allowAddTask !== undefined ? layout.allowAddTask : true,
+          allowDeleteTask: layout.allowDeleteTask !== undefined ? layout.allowDeleteTask : true,
+          newTaskText: ""
+        });
+        
+        console.log("TodoList initial state:", todoListState);
+        
+        // Save todo list state to database
+        const saveTodoListStateToDatabase = useCallback(async (state) => {
+          try {
+            const { error } = await supabase
+              .from("overlays")
+              .update({
+                layout: {
+                  ...layout,
+                  title: state.title,
+                  tasks: state.tasks,
+                  showCompleted: state.showCompleted,
+                  allowAddTask: state.allowAddTask,
+                  allowDeleteTask: state.allowDeleteTask
+                }
+              })
+              .eq("id", id);
+            
+            if (error) {
+              throw error;
+            }
+          } catch (error) {
+            console.error("Error saving todo list state:", error);
+          }
+        }, [id, layout]);
+        
+        // Function to toggle task completion
+        const toggleTask = (taskId) => {
+          const updatedTasks = todoListState.tasks.map(task => 
+            task.id === taskId 
+              ? { ...task, completed: !task.completed } 
+              : task
+          );
+          
+          const newState = {
+            ...todoListState,
+            tasks: updatedTasks
+          };
+          
+          setTodoListState(newState);
+          saveTodoListStateToDatabase(newState);
+        };
+        
+        // Function to add new task
+        const addTask = () => {
+          if (!todoListState.newTaskText.trim()) return;
+          
+          const newTask = {
+            id: Date.now().toString(),
+            text: todoListState.newTaskText.trim(),
+            completed: false,
+            priority: "medium", // Default priority
+            createdAt: Date.now()
+          };
+          
+          const newState = {
+            ...todoListState,
+            tasks: [newTask, ...todoListState.tasks],
+            newTaskText: ""
+          };
+          
+          setTodoListState(newState);
+          saveTodoListStateToDatabase(newState);
+        };
+        
+        // Function to delete task
+        const deleteTask = (taskId) => {
+          const newState = {
+            ...todoListState,
+            tasks: todoListState.tasks.filter(task => task.id !== taskId)
+          };
+          
+          setTodoListState(newState);
+          saveTodoListStateToDatabase(newState);
+        };
+        
+        // Toggle showing completed tasks
+        const toggleShowCompleted = () => {
+          const newState = {
+            ...todoListState,
+            showCompleted: !todoListState.showCompleted
+          };
+          
+          setTodoListState(newState);
+          saveTodoListStateToDatabase(newState);
+        };
+        
+        return <TodoListOverlay
+          id={id}
+          layout={layout}
+          style={todoListStyle}
+          url={todoListUrl}
+          zIndex={todoListZIndex}
+          onDelete={() => onDelete && onDelete(id)} 
+          onPin={(isPinned) => onPin && onPin(id, isPinned)}
+          title={todoListState.title}
+          tasks={todoListState.tasks}
+          showCompleted={todoListState.showCompleted}
+          allowAddTask={todoListState.allowAddTask}
+          allowDeleteTask={todoListState.allowDeleteTask}
+          newTaskText={todoListState.newTaskText}
+          onToggleTask={toggleTask}
+          onAddTask={addTask}
+          onDeleteTask={deleteTask}
+          onToggleShowCompleted={toggleShowCompleted}
+          onNewTaskTextChange={(value) => setTodoListState(prev => ({ ...prev, newTaskText: value }))}
         />;
         
       default:

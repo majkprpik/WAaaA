@@ -5,7 +5,6 @@
  */
 
 // TODO: Replace this with your actual API key
-export const OPENAI_API_KEY = 'YOUR_OPENAI_API_KEY_HERE';
 
 /**
  * Get the current OpenAI API key

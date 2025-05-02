@@ -33,9 +33,12 @@ when i start with /approval always use approval overlay format
 when i start with /poll always use poll overlay format
 when i start with /note always use note overlay format  -> try to sumarise wverything from context added
 when i start with /button always use button overlay format
+when i start with /todolist always use todolist overlay format -> analyze context data to generate tasks
 
 
 ALWAYS FIRST LOOK TO CONTEXT DATA I SENDED WITH THIS INSTRUCTION HIS NEEDS TO BE USED TO CREATE THE OVERLAY!
+
+FOR LABELS, PLACEHOLDERS, BUTTON TEXT, ETC. USE CROATIAN LANGUAGE!
 
 1. For a simple note:
 {
@@ -88,6 +91,7 @@ ALWAYS FIRST LOOK TO CONTEXT DATA I SENDED WITH THIS INSTRUCTION HIS NEEDS TO BE
 }
 
 // is user asking about /email to send then use this format -> one biger input with text user provided and send input on top of this with user provided and on end put send button
+this is just example, we dont need contact form all the time, make form for things user needs to fill out to make some action from context
 5. For a form element (with multiple fields):
 {
   "type": "form",
@@ -367,9 +371,48 @@ IF I ASK FOR A POLL OVERLAY/ POLL FORM/ VOTING FORM OR SOMETHING LIKE THIS, USE 
   "history": []
 }
 
+11. For a todo list with tasks:
+{
+  "type": "todolist",
+  "style": {
+    "width": 450,
+    "backgroundColor": "white",
+    "borderRadius": "8px",
+    "padding": "16px"
+  },
+  "title": "My Tasks",
+  "tasks": [
+    {
+      "id": "task1",
+      "text": "Complete project documentation",
+      "completed": false,
+      "priority": "high",
+      "dueDate": "2023-12-10",
+      "tags": ["work", "documentation"]
+    },
+    {
+      "id": "task2",
+      "text": "Review pull requests",
+      "completed": true,
+      "priority": "medium",
+      "tags": ["work", "coding"]
+    },
+    {
+      "id": "task3",
+      "text": "Plan team meeting",
+      "completed": false,
+      "priority": "medium"
+    }
+  ],
+  "showCompleted": true,
+  "allowAddTask": true,
+  "allowDeleteTask": true
+}
+
 
 IF I ASK FOR TRANSLATION OR LANGUAGE TRANSLATION, USE FORMAT #9 ABOVE.
 IF I ASK FOR EXPLANATION OR TO EXPLAIN SOMETHING, USE FORMAT #10 ABOVE.
+IF I ASK FOR TODO LIST OR TASK LIST, USE FORMAT #11 ABOVE.
 
 Note that forms can have any number of fields of different types.
 
@@ -413,7 +456,8 @@ const PersistentAIChat: React.FC = () => {
     '/poll',
     '/email',
     '/talk',
-    '/clear'
+    '/clear',
+    '/todolist'
   ];
   
   // Context panel states
@@ -439,7 +483,8 @@ const PersistentAIChat: React.FC = () => {
       setMessages([
         {
           role: "assistant",
-          content: "Hello! I can help with tasks and create interactive overlays for your screen. You can ask me to create notes, buttons, timers, or search overlays. What would you like to do?",
+          content: "Pozdrav! Kako ti mogu pomoći?",
+          // content: "Hello! I can help with tasks and create interactive overlays for your screen. You can ask me to create notes, buttons, timers, or search overlays. What would you like to do?",
           timestamp: Date.now()
         }
       ]);
@@ -669,11 +714,11 @@ const PersistentAIChat: React.FC = () => {
       const messages = [
         {
           role: "system",
-          content: "You are a helpful assistant that generates short, concise titles (2-4 words) that summarize the main topic or content of a text. Respond with just the title, no additional text."
+          content: "You are a helpful assistant that generates short, concise titles (up to 10 words) that summarize the main topic or content of a text. Respond with just the title ON CROATIAN , no additional text."
         },
         {
           role: "user",
-          content: `Generate a short title (2-4 words) for this text: "${text}"`
+          content: `Generate a short title (up to 10 words) for this text: "${text}"`
         }
       ];
       
@@ -688,7 +733,7 @@ const PersistentAIChat: React.FC = () => {
           model: "gpt-3.5-turbo",
           messages: messages,
           temperature: 0.7,
-          max_tokens: 20
+          // max_tokens: 20
         })
       });
       
@@ -701,14 +746,14 @@ const PersistentAIChat: React.FC = () => {
       const summary = data.choices[0].message.content.trim();
       
       // If summary is empty or too long, fallback to first word
-      if (!summary || summary.length > 30) {
-        return text.split(/\s+/)[0] || "Context";
-      }
+      // if (!summary || summary.length > 30) {
+      //   return text.split(/\s+/)[0] || "Context";
+      // }
       
       return summary;
     } catch (error) {
       console.error("Error getting summary:", error);
-      return text.split(/\s+/)[0] || "Context"; // Fallback to first word
+      return text.split(/\s+/)[0] + text.split(/\s+/)[1] + '...'|| "Context"; // Fallback to first word
     }
   };
 
@@ -746,7 +791,7 @@ const PersistentAIChat: React.FC = () => {
       console.log("Content type:", parsedContent.type);
       
       // Check if it has the expected format
-      if (parsedContent && parsedContent.type && ['note', 'button', 'timer', 'search', 'form', 'grid', 'approval', 'poll', 'translation', 'explain'].includes(parsedContent.type)) {
+      if (parsedContent && parsedContent.type && ['note', 'button', 'timer', 'search', 'form', 'grid', 'approval', 'poll', 'translation', 'explain', 'todolist'].includes(parsedContent.type)) {
         console.log("Creating overlay of type:", parsedContent.type);
         
         // Additional validation for grid type
@@ -782,9 +827,34 @@ const PersistentAIChat: React.FC = () => {
           }
         }
         
+        // Additional validation for todolist type
+        if (parsedContent.type === 'todolist') {
+          console.log("Processing todolist overlay");
+          // Make sure tasks is an array
+          if (!Array.isArray(parsedContent.tasks)) {
+            console.error("Todo list tasks must be an array");
+            return false;
+          }
+          
+          // Ensure each task has required properties
+          parsedContent.tasks = parsedContent.tasks.map((task: any, index: number) => {
+            return {
+              id: task.id || `task${Date.now()}-${index}`,
+              text: task.text || "Unnamed task",
+              completed: !!task.completed,
+              priority: task.priority || "medium",
+              tags: Array.isArray(task.tags) ? task.tags : [],
+              ...task
+            };
+          });
+          console.log("Processed todolist tasks:", parsedContent.tasks);
+        }
+        
         // Get position for the new overlay
         const { data } = await supabase.from("overlays").select();
+        console.log("Current overlays:", data);
         const position = calculateNextPosition(data || []);
+        console.log("Calculated position:", position);
         
         // Add position to style
         parsedContent.style = {
@@ -795,12 +865,17 @@ const PersistentAIChat: React.FC = () => {
         
         // Add URL to make it visible on current page
         parsedContent.url = window.location.href;
+        console.log("Final overlay data:", parsedContent);
         
         // Create the overlay with current username
         const overlayName = parsedContent.type.charAt(0).toUpperCase() + parsedContent.type.slice(1);
+        console.log("Creating overlay with name:", overlayName);
         const result = await createOverlayWithCurrentUsername(overlayName, parsedContent);
+        console.log("Overlay creation result:", result);
         
         return result !== null;
+      } else {
+        console.error("Invalid overlay format or unsupported type:", parsedContent?.type);
       }
     } catch (error) {
       console.error("Error parsing overlay JSON:", error);
@@ -1083,6 +1158,108 @@ const PersistentAIChat: React.FC = () => {
       return;
     }
     
+    // Special handling for /todolist command to create tasks from context
+    if (processedInput.startsWith('/todolist') && !isTalkMode) {
+      // If the command is just "/todolist test", run the test function
+      if (processedInput.trim() === "/todolist test") {
+        testCreateTodoList();
+        setInput("");
+        return;
+      }
+      
+      // Extract todolist instructions - everything after /todolist
+      const todoListRequest = processedInput.substring(9).trim();
+      
+      // Get active context items to use as data for the tasks
+      const activeContextItems = contextItems.filter(item => item.active);
+      
+      // if (activeContextItems.length === 0) {
+      //   // If no context items, add a message suggesting to add context
+      //   setMessages([
+      //     ...messages,
+      //     { 
+      //       role: "user", 
+      //       content: processedInput,
+      //       timestamp: Date.now()
+      //     },
+      //     {
+      //       role: "assistant",
+      //       content: "Please add some context items and make them active before creating a todo list overlay. The AI will analyze the context to generate appropriate tasks.",
+      //       timestamp: Date.now() + 1
+      //     }
+      //   ]);
+      //   setInput("");
+      //   return;
+      // }
+      
+      const contextData = activeContextItems.map(item => item.text).join("\n\n");
+      
+      // Transform the input to specifically request todolist overlay with context data
+      const enhancedInput = `/todolist ${todoListRequest}\n\nUSE THIS CONTEXT DATA TO GENERATE TASKS: ${contextData}\n\nAnalyze the context and extract tasks that need to be done. Convert requirements, action items, and todo items into proper tasks with appropriate priorities.`;
+      
+      // Add user message
+      const newMessages = [
+        ...messages, 
+        { 
+          role: "user", 
+          content: enhancedInput,
+          timestamp: Date.now()
+        }
+      ];
+      
+      // Update state and clear input
+      setMessages(newMessages);
+      setInput("");
+      setIsLoading(true);
+      
+      try {
+        // Call OpenAI
+        const aiResponse = await callOpenAI(newMessages, false);
+        
+        // Add AI response to messages
+        const updatedMessages = [
+          ...newMessages,
+          {
+            role: "assistant",
+            content: aiResponse,
+            timestamp: Date.now()
+          }
+        ];
+        
+        setMessages(updatedMessages);
+        
+        // Try to parse the response as an overlay
+        const isOverlay = await tryParseOverlay(aiResponse);
+        
+        // If successfully created an overlay, add confirmation message
+        if (isOverlay) {
+          setMessages([
+            ...updatedMessages,
+            {
+              role: "assistant",
+              content: "✅ Todo list overlay created successfully! The AI has analyzed your context data and generated tasks.",
+              timestamp: Date.now() + 1
+            }
+          ]);
+        }
+      } catch (error) {
+        // Add error message
+        const errorMessages = [
+          ...newMessages,
+          {
+            role: "assistant",
+            content: `Error: ${error.message || "Failed to get AI response"}`,
+            timestamp: Date.now()
+          }
+        ];
+        
+        setMessages(errorMessages);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+    
     // Special handling for /form command to create form from context
     if (processedInput.startsWith('/form') && !isTalkMode) {
       // Extract form instructions - everything after /form
@@ -1091,24 +1268,24 @@ const PersistentAIChat: React.FC = () => {
       // Get active context items to use as data for the form
       const activeContextItems = contextItems.filter(item => item.active);
       
-      if (activeContextItems.length === 0) {
-        // If no context items, add a message suggesting to add context
-        setMessages([
-          ...messages,
-          { 
-            role: "user", 
-            content: processedInput,
-            timestamp: Date.now()
-          },
-          {
-            role: "assistant",
-            content: "Please add some context items and make them active before creating a form overlay. The AI will use the context to generate appropriate form fields.",
-            timestamp: Date.now() + 1
-          }
-        ]);
-        setInput("");
-        return;
-      }
+      // if (activeContextItems.length === 0) {
+      //   // If no context items, add a message suggesting to add context
+      //   setMessages([
+      //     ...messages,
+      //     { 
+      //       role: "user", 
+      //       content: processedInput,
+      //       timestamp: Date.now()
+      //     },
+      //     {
+      //       role: "assistant",
+      //       content: "Please add some context items and make them active before creating a form overlay. The AI will use the context to generate appropriate form fields.",
+      //       timestamp: Date.now() + 1
+      //     }
+      //   ]);
+      //   setInput("");
+      //   return;
+      // }
       
       const contextData = activeContextItems.map(item => item.text).join("\n\n");
       
@@ -1456,6 +1633,75 @@ const PersistentAIChat: React.FC = () => {
     localStorage.setItem('contextItems', JSON.stringify([]));
   };
 
+  // Test function to directly create a todolist overlay
+  const testCreateTodoList = async () => {
+    try {
+      console.log("Testing todolist creation");
+      const todoListData = {
+        type: "todolist",
+        style: {
+          width: 450,
+          backgroundColor: "white",
+          borderRadius: "8px",
+          padding: "16px"
+        },
+        title: "Tasks for Today",
+        tasks: [
+          {
+            id: "task1",
+            text: "Kiss Marina",
+            completed: false,
+            priority: "high",
+            tags: ["personal", "important"]
+          },
+          {
+            id: "task2",
+            text: "Hug Marina",
+            completed: false,
+            priority: "high",
+            tags: ["personal", "important"]
+          }
+        ],
+        showCompleted: true,
+        allowAddTask: true,
+        allowDeleteTask: true
+      };
+
+      // Let's try the raw JSON parsing approach first
+      const jsonString = JSON.stringify(todoListData, null, 2);
+      const success = await tryParseOverlay(jsonString);
+      
+      setMessages([
+        ...messages,
+        { 
+          role: "user", 
+          content: "Test create todo list",
+          timestamp: Date.now()
+        },
+        {
+          role: "assistant",
+          content: success ? "✅ Todo list created successfully!" : "❌ Failed to create todo list",
+          timestamp: Date.now() + 1
+        }
+      ]);
+    } catch (error) {
+      console.error("Error in test function:", error);
+      setMessages([
+        ...messages,
+        { 
+          role: "user", 
+          content: "Test create todo list",
+          timestamp: Date.now()
+        },
+        {
+          role: "assistant",
+          content: `❌ Error creating todo list: ${error.message || "Unknown error"}`,
+          timestamp: Date.now() + 1
+        }
+      ]);
+    }
+  };
+
   // Always show both buttons and render appropriate panels
   return (
     <>
@@ -1551,7 +1797,7 @@ const PersistentAIChat: React.FC = () => {
                 color: "#888",
                 fontSize: "14px"
               }}>
-                No context items yet. Add some text below!
+                Nema kontekstnih stavki. Dodajte tekst u nastavku!
               </div>
             ) : (
               <div style={{
@@ -1706,7 +1952,7 @@ const PersistentAIChat: React.FC = () => {
               value={contextInput}
               onChange={(e) => setContextInput(e.target.value)}
               onKeyPress={(e) => e.key === "Enter" && addContextItem()}
-              placeholder="Add text to your context library..."
+              placeholder="Dodajte tekst u vašu kontekstnu knjižnicu..."
               disabled={isLoading}
               style={{
                 flex: 1,
@@ -1735,7 +1981,7 @@ const PersistentAIChat: React.FC = () => {
                 justifyContent: "center"
               }}
             >
-              {isLoading ? "Adding..." : "Add"}
+              {isLoading ? "Dodavanje..." : "Dodaj"}
             </button>
           </div>
         </div>
@@ -1892,7 +2138,7 @@ const PersistentAIChat: React.FC = () => {
                   fontSize: "14px"
                 }}
               >
-                <i>Thinking...</i>
+                <i>Razmišljam...</i>
               </div>
             )}
           </div>
@@ -1913,7 +2159,7 @@ const PersistentAIChat: React.FC = () => {
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleInputKeyDown}
-              placeholder={isTalkModeActive ? "Chat conversation mode (no overlays)..." : "Ask for help or create an overlay..."}
+              placeholder={isTalkModeActive ? "" : ""}
               disabled={isLoading}
               style={{
                 flex: 1,
@@ -1970,6 +2216,7 @@ const PersistentAIChat: React.FC = () => {
                       {command === '/email' && "Create an email overlay from context data"}
                       {command === '/talk' && "Just have a regular chat conversation"}
                       {command === '/clear' && "Clear chat history and context items"}
+                      {command === '/todolist' && "Create a todo list overlay from context data"}
                     </span>
                   </div>
                 ))}

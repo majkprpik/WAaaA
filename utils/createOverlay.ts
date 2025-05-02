@@ -172,6 +172,24 @@ export interface PollLayout extends BaseLayoutProps {
   expiresAt?: number;
 }
 
+// Todo List overlay
+export interface TodoListLayout extends BaseLayoutProps {
+  type: "todolist";
+  title?: string;
+  tasks: Array<{
+    id: string;
+    text: string;
+    completed: boolean;
+    dueDate?: string;
+    priority?: "low" | "medium" | "high";
+    tags?: string[];
+  }>;
+  showCompleted?: boolean;
+  allowAddTask?: boolean;
+  allowDeleteTask?: boolean;
+  createdAt?: number;
+}
+
 // Translation overlay
 export interface TranslationLayout extends BaseLayoutProps {
   type: "translation";
@@ -226,6 +244,7 @@ export type OverlayLayout =
   | PollLayout
   | TranslationLayout
   | ExplainLayout
+  | TodoListLayout
   | CustomLayout;
 
 export interface OverlayData {
